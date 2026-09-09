@@ -125,6 +125,7 @@ function install_seed_values() {
         'chan_index_ttl'        => '900',
         'chan_debug'            => '0',
         'chan_debug_keep'       => '50',
+        'globalkeys_enabled'    => '0',
     ];
 }
 
@@ -190,6 +191,8 @@ function install_statements_sqlite() {
             FOREIGN KEY (session_id) REFERENCES chat_sessions (id) ON DELETE CASCADE
         )",
         "CREATE INDEX IF NOT EXISTS idx_chat_msg_session ON chat_messages(session_id, id)",
+        "CREATE TABLE IF NOT EXISTS global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order)",
         seed_sql('sqlite'),
     ];
 }
@@ -249,6 +252,14 @@ function install_statements_mysql() {
             body TEXT NOT NULL, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             PRIMARY KEY (id), KEY idx_chat_msg_session (session_id, id),
             CONSTRAINT fk_chat_msg_session FOREIGN KEY (session_id) REFERENCES chat_sessions (id) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+        "CREATE TABLE IF NOT EXISTS global_keys (
+            id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, name VARCHAR(191) NULL,
+            enabled TINYINT(1) NOT NULL DEFAULT 1, source_type VARCHAR(32) NOT NULL DEFAULT 'vless',
+            raw MEDIUMTEXT NOT NULL, parsed MEDIUMTEXT NOT NULL, sort_order INT NOT NULL DEFAULT 0,
+            created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (id), KEY idx_gk_enabled (enabled, sort_order)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
         seed_sql('mysql'),
     ];
@@ -427,6 +438,14 @@ function migrate_extra_ddl($drv) {
                 main_short VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
                 add_url TEXT NULL, ts INT UNSIGNED NOT NULL DEFAULT 0, PRIMARY KEY (main_short)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+            "CREATE TABLE IF NOT EXISTS global_keys (
+                id INT UNSIGNED NOT NULL AUTO_INCREMENT, name VARCHAR(191) NULL,
+                enabled TINYINT(1) NOT NULL DEFAULT 1, source_type VARCHAR(32) NOT NULL DEFAULT 'vless',
+                raw MEDIUMTEXT NOT NULL, parsed MEDIUMTEXT NOT NULL, sort_order INT NOT NULL DEFAULT 0,
+                created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                PRIMARY KEY (id), KEY idx_gk_enabled (enabled, sort_order)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS login_attempts (
                 id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, ip VARCHAR(45) NOT NULL,
                 ts TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -489,6 +508,8 @@ function migrate_extra_ddl($drv) {
         "CREATE INDEX IF NOT EXISTS idx_wguc_ts ON wg_user_cache(ts)",
         "CREATE TABLE IF NOT EXISTS addsub_map (main_short TEXT NOT NULL PRIMARY KEY, add_url TEXT NOT NULL, note TEXT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
         "CREATE TABLE IF NOT EXISTS addsub_cache (main_short TEXT NOT NULL PRIMARY KEY, add_url TEXT NULL, ts INTEGER NOT NULL DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order)",
         "CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
         "CREATE INDEX IF NOT EXISTS idx_la_ip ON login_attempts(ip)",
         "CREATE INDEX IF NOT EXISTS idx_la_ts ON login_attempts(ts)",
@@ -548,7 +569,7 @@ function db_migrate(array $from, array $to, &$err = '') {
     $tables = db_list_tables($src, $sdrv);
     if (!$tables) {
         $tables = ['settings', 'overrides', 'request_log', 'webhook_log', 'forward_log', 'grace_users',
-                   'chat_sessions', 'chat_messages', 'metrics_minute', 'metrics_peak', 'squad_configs',
+                   'chat_sessions', 'chat_messages', 'metrics_minute', 'metrics_peak', 'squad_configs', 'global_keys',
                    'squad_cache', 'wg_lease', 'hwid_devices', 'wg_user_cache', 'addsub_map', 'addsub_cache', 'login_attempts', 'junk_hits'];
     }
     $verb = ($drv === 'mysql') ? 'REPLACE' : 'INSERT OR REPLACE';

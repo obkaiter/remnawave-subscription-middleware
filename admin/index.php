@@ -1256,6 +1256,25 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && is_auth()) {
         flash('Настройки доп-конфигов сохранены');
         form_saved('squad_configs');
     }
+
+    if ($action === 'save_globalkeys') {
+        set_setting('globalkeys_enabled', isset($_POST['globalkeys_enabled']) ? '1' : '0');
+        flash('Настройки глобальных ключей сохранены');
+        form_saved('globalkeys');
+    }
+    if ($action === 'add_globalkeys') {
+        $err = ''; $raw = (string) ($_POST['raw'] ?? '');
+        $items = globalkeys_parse_input($raw, $err);
+        $first = ltrim($raw)[0] ?? '';
+        if ($err !== '') flash($err);
+        elseif (!globalkeys_add_many($items, $raw, in_array($first, ['{', '['], true) ? 'xray_json' : 'vless', $err)) flash($err);
+        else flash('Добавлено глобальных ключей: ' . count($items));
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'toggle_globalkey') { globalkeys_toggle((int) ($_POST['id'] ?? 0), ($_POST['enabled'] ?? '0') === '1'); header('Location: index.php?tab=globalkeys'); exit(); }
+    if ($action === 'move_globalkey') { globalkeys_move((int) ($_POST['id'] ?? 0), ($_POST['direction'] ?? 'up') === 'up' ? -1 : 1); header('Location: index.php?tab=globalkeys'); exit(); }
+    if ($action === 'delete_globalkey') { globalkeys_delete((int) ($_POST['id'] ?? 0)); flash('Глобальный ключ удалён'); header('Location: index.php?tab=globalkeys'); exit(); }
+    if ($action === 'rename_globalkey') { globalkeys_update_name((int) ($_POST['id'] ?? 0), $_POST['name'] ?? ''); flash('Название ключа обновлено'); header('Location: index.php?tab=globalkeys'); exit(); }
 }
 
 $tab   = $_GET['tab'] ?? 'users';
@@ -1504,10 +1523,12 @@ if ($tab === 'wg_pool') {
 }
 $addsub_list = [];
 if ($tab === 'addsub') $addsub_list = addsub_map_all();
+$globalkeys_list = $tab === 'globalkeys' ? globalkeys_all() : [];
 $mirror        = mirror_domain();
 $wh_url        = ($mirror !== '' ? ('https://' . $mirror . '/webhook.php') : '/webhook.php');
 
 $tab_titles = ['users' => 'Пользователи', 'branding' => 'Брендинг', 'connection' => 'Подключение', 'webhooks' => 'Вебхуки', 'subst' => 'Грейс-сквад для истёкших', 'headers' => 'Заголовки приложений', 'rules' => 'Правила ответа по приложению', 'hwid' => 'HWID — заблокированные', 'overrides' => 'Оверрайды', 'reqlog' => 'Лог запросов', 'whlog' => 'Лог вебхуков', 'whlog_other' => 'Лог вебхуков', 'fwdlog' => 'Лог пересылки', 'grace_users' => 'Грейс-юзеры', 'sysinfo' => 'О системе', 'update' => 'Обновление', 'migrate' => 'База данных', 'chat' => 'Чат поддержки', 'squad_configs' => 'Доп. конфиги (простые)', 'wg_pool' => 'WG / AWG конфиги', 'addsub' => 'Слияние подписок', 'clod' => 'Защищённый канал (Clod Clash)'];
+$tab_titles['globalkeys'] = 'Ключи';
 $tab_title  = $tab_titles[$tab] ?? 'Админка';
 $bc_now = json_decode((string) setting('brand_cache', '{}'), true);
 if (!is_array($bc_now)) $bc_now = [];
@@ -1664,6 +1685,7 @@ $nav = [
     'hwid'      => ['HWID', '<path d="M18.9 7a8 8 0 0 1 1.1 5v1a6 6 0 0 0 .8 3" /> <path d="M8 11a4 4 0 0 1 8 0v1a10 10 0 0 0 2 6" /> <path d="M12 11v2a14 14 0 0 0 2.5 8" /> <path d="M8 15a18 18 0 0 0 1.8 6" /> <path d="M4.9 19a22 22 0 0 1 -.9 -7v-1a8 8 0 0 1 12 -6.95" />'],
     'overrides' => ['Оверрайды', '<path d="M3 4a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /> <path d="M15 16a1 1 0 0 1 1 -1h4a1 1 0 0 1 1 1v4a1 1 0 0 1 -1 1h-4a1 1 0 0 1 -1 -1l0 -4" /> <path d="M21 11v-3a2 2 0 0 0 -2 -2h-6l3 3m0 -6l-3 3" /> <path d="M3 13v3a2 2 0 0 0 2 2h6l-3 -3m0 6l3 -3" />'],
     'squad_configs' => ['Доп. конфиги', '<path d="M11.35 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.706.706l3.588 3.588A2.4 2.4 0 0 1 20 8v5.35" /> <path d="M14 2v5a1 1 0 0 0 1 1h5" /> <path d="M14 19h6" /> <path d="M17 16v6" />'],
+    'globalkeys' => ['Ключи', '<path d="m21 2-2 2"/><circle cx="8" cy="15" r="5"/><path d="m12 11 5-5 3 3-5 5"/>'],
     'wg_pool'   => ['WG / AWG', '<rect x="16" y="16" width="6" height="6" rx="1" /> <rect x="2" y="16" width="6" height="6" rx="1" /> <rect x="9" y="2" width="6" height="6" rx="1" /> <path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" /> <path d="M12 12V8" />'],
     'addsub'    => ['Слияние подписок', '<path d="M3 7h5l3.5 5h9.5" /> <path d="M3 17h5l3.495 -5" /> <path d="M18 15l3 -3l-3 -3" />'],
     'clod'      => ['Защищённый канал', '<circle cx="12" cy="16" r="1" /> <rect x="3" y="10" width="18" height="12" rx="2" /> <path d="M7 10V7a5 5 0 0 1 10 0v3" />'],
@@ -1683,7 +1705,7 @@ $nav_sections = [
     ['l' => 'Настройки',        'coll' => true,  'k' => 'set',    'items' => ['connection', 'branding']],
     ['l' => 'Вебхуки',          'coll' => true,  'k' => 'wh',     'items' => forward_enabled() ? ['webhooks', 'fwdlog', 'whlog'] : ['webhooks', 'whlog']],
     ['l' => 'Грейс',            'coll' => true,  'k' => 'grace',  'items' => ['subst', 'grace_users']],
-    ['l' => 'Доступ / подмена', 'coll' => true,  'k' => 'access', 'items' => ['rules', 'hwid', 'overrides', 'squad_configs', 'wg_pool', 'addsub', 'clod']],
+    ['l' => 'Доступ / подмена', 'coll' => true,  'k' => 'access', 'items' => ['rules', 'hwid', 'overrides', 'globalkeys', 'squad_configs', 'wg_pool', 'addsub', 'clod']],
     ['l' => 'Обслуживание',     'coll' => false, 'k' => 'maint',  'items' => ['sysinfo', 'update', 'migrate']],
 ];
 function submw_ui_cookie() {
@@ -1767,10 +1789,10 @@ window.addEventListener('pagehide',function(){lock=0;save();});})();</script>
         <header class="rw-header">
             <div style="display:flex;align-items:center;gap:.7rem;min-width:0">
                 <button type="button" class="navtoggle" aria-label="Меню" onclick="document.querySelector('.rw-app').classList.toggle('nav-open')">☰</button>
-                <h1 class="pagetitle"><?= h($tab_title) ?></h1>
+                <h1 class="pagetitle"><?= h($tab_title) ?> <small style="font-size:.55em;color:var(--muted);font-weight:500">Custom build</small></h1>
             </div>
             <div class="rw-hcontrols">
-                <a class="hbtn" href="https://github.com/Mrvibecodic/remnawave-subscription-middleware" target="_blank" rel="noopener" title="GitHub — поставьте звезду ⭐"><svg width="20" height="20" class="hbtn-star" viewBox="0 0 24 24" fill="#f5b50a" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span id="ghStarCount"></span></a>
+                <a class="hbtn" href="https://github.com/obkaiter/remnawave-subscription-middleware" target="_blank" rel="noopener" title="GitHub fork"><svg width="20" height="20" class="hbtn-star" viewBox="0 0 24 24" fill="#f5b50a" stroke="#1a1a1a" stroke-width="1.4" stroke-linejoin="round" stroke-linecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg><span id="ghStarCount"></span></a>
                 <a class="hbtn hbtn-ver" href="?tab=update" title="<?= update_available() ? 'Доступно обновление прослойки' : 'Версия прослойки' ?>">Версия <code><?php $iv = update_installed_commit(); echo $iv !== '' ? h(substr($iv, 0, 7)) : '—'; ?></code> (<?= h(update_branch()) ?>)<?php if (update_available()): ?><span class="hbtn-dot" title="Доступно обновление"></span><?php endif; ?></a>
 <?php
     // Бейдж версии панели. Рендерится из кэша — обращение к панели делает ajax
@@ -1819,6 +1841,8 @@ window.addEventListener('pagehide',function(){lock=0;save();});})();</script>
 
 <?php elseif ($tab === 'squad_configs'): ?>
     <?php include __DIR__ . '/inc/tab_squad_configs.php'; ?>
+<?php elseif ($tab === 'globalkeys'): ?>
+    <?php include __DIR__ . '/inc/tab_globalkeys.php'; ?>
 <?php elseif ($tab === 'wg_pool'): ?>
     <?php include __DIR__ . '/inc/tab_wg_pool.php'; ?>
 <?php elseif ($tab === 'addsub'): ?>
@@ -1993,7 +2017,7 @@ if(window.matchMedia){matchMedia('(prefers-color-scheme: dark)').addEventListene
     })();
     ok.addEventListener('click',function(){var f=cb; uiDlgClose(); if(f)f();});
     document.addEventListener('keydown',function(e){if(e.key==='Escape')uiDlgClose();});
-    (function(){var el=document.getElementById('ghStarCount');if(!el)return;try{var c=JSON.parse(localStorage.getItem('gh_stars')||'null');if(c&&Date.now()-c.t<21600000){el.textContent=c.n;return;}}catch(e){}fetch('https://api.github.com/repos/Mrvibecodic/remnawave-subscription-middleware').then(function(r){return r.json();}).then(function(d){if(d&&typeof d.stargazers_count==='number'){el.textContent=d.stargazers_count;try{localStorage.setItem('gh_stars',JSON.stringify({n:d.stargazers_count,t:Date.now()}));}catch(e){}}}).catch(function(){});})();
+    (function(){var el=document.getElementById('ghStarCount');if(!el)return;try{var c=JSON.parse(localStorage.getItem('gh_stars_fork')||'null');if(c&&Date.now()-c.t<21600000){el.textContent=c.n;return;}}catch(e){}fetch('https://api.github.com/repos/obkaiter/remnawave-subscription-middleware').then(function(r){return r.json();}).then(function(d){if(d&&typeof d.stargazers_count==='number'){el.textContent=d.stargazers_count;try{localStorage.setItem('gh_stars_fork',JSON.stringify({n:d.stargazers_count,t:Date.now()}));}catch(e){}}}).catch(function(){});})();
     // Версия панели: бейдж уже отрисован из кэша, здесь только освежаем значение.
     (function(){
         var badge=document.getElementById('panelVerBadge'), txt=document.getElementById('panelVerText');

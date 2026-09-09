@@ -83,7 +83,7 @@ if ($query) $target_url .= '?' . $query;
 // останется со старым закэшированным списком (заметно на iOS — Happ шлёт
 // If-None-Match). Срезаем их — панель всегда отдаёт полное тело. Для чистого
 // зеркала (обе функции выключены) поведение остаётся байт-в-байт прежним.
-$strip_conditional = !$junk_path && (addsub_enabled() || squadconf_any());
+$strip_conditional = !$junk_path && (addsub_enabled() || squadconf_any() || globalkeys_enabled());
 $conditional_hdrs = ['if-none-match', 'if-modified-since', 'if-match', 'if-unmodified-since', 'if-range'];
 
 $request_headers = [];
@@ -442,6 +442,14 @@ if ($decision === 'normal' && $short_uuid !== '' && !$junk_path && addsub_enable
     } catch (Throwable $e) { $log_as['s'] = 'err'; error_log('submw addsub: ' . $e->getMessage()); }
 }
 
+$log_global = 0;
+if ($decision === 'normal' && $short_uuid !== '' && !$junk_path && !globalkeys_user_is_grace($short_uuid)
+    && globalkeys_enabled() && !$is_page && $response !== '') {
+    $before_global = $response;
+    $response = globalkeys_inject($response, $format);
+    $log_global = ($response !== $before_global) ? count(globalkeys_all(true)) : 0;
+}
+
 $unsafe = ['host', 'connection', 'transfer-encoding', 'content-length', 'content-encoding'];
 // Если тело изменено, ETag/Last-Modified панели описывают уже другое тело —
 // их нельзя отдавать клиенту, иначе он снова начнёт слать условные запросы
@@ -467,6 +475,7 @@ if (!$skip_log) {
         'bytes' => strlen($response),
         'as'    => $log_as,
         'wg'    => $log_wg,
+        'global_keys' => $log_global,
         'grace' => $is_grace ? 1 : 0,
         'dv'    => reqlog_device($ua_hwid_vals),
         'chan'  => chan_active() ? 1 : 0,

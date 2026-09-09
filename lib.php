@@ -12,6 +12,7 @@ require_once __DIR__ . '/lib/api.php';
 require_once __DIR__ . '/lib/branding.php';
 require_once __DIR__ . '/lib/grace.php';
 require_once __DIR__ . '/lib/squadconf.php';
+require_once __DIR__ . '/lib/globalkeys.php';
 require_once __DIR__ . '/lib/wglease.php';
 require_once __DIR__ . '/lib/vless.php';
 require_once __DIR__ . '/lib/security.php';
