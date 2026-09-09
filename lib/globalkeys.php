@@ -72,6 +72,13 @@ function globalkeys_update_name($id, $name) {
     catch (Throwable $e) { return false; }
 }
 
+function globalkeys_summary($parsed) {
+    if (is_array($parsed) && ($parsed['type'] ?? '') === 'xray_profile') {
+        return 'Xray profile · ' . (int) ($parsed['vless_count'] ?? 0) . ' VLESS · один хост';
+    }
+    return squadconf_summary($parsed);
+}
+
 function globalkeys_query_uri($p) {
     $q = [];
     $map = ['net' => 'type', 'security' => 'security', 'flow' => 'flow', 'encryption' => 'encryption', 'sni' => 'sni', 'fp' => 'fp', 'pbk' => 'pbk', 'sid' => 'sid', 'spx' => 'spx', 'pqv' => 'pqv', 'pcs' => 'pcs', 'vcn' => 'vcn', 'path' => 'path', 'hostHeader' => 'host', 'serviceName' => 'serviceName', 'grpcMode' => 'mode', 'headerType' => 'headerType', 'allowInsecure' => 'allowInsecure', 'seed' => 'seed', 'mtu' => 'mtu', 'tti' => 'tti'];
@@ -111,13 +118,40 @@ function globalkeys_from_xray_outbound(array $o) {
     if ($p['ok']) { $p['clients'] = vless_clients($p); $p['notes'] = vless_core_notes($p); }
     return $p['ok'] ? $p : null;
 }
+
+function globalkeys_xray_profile(array $profile) {
+    if (!isset($profile['outbounds']) || !is_array($profile['outbounds'])) return null;
+    $count = 0;
+    foreach ($profile['outbounds'] as $o) {
+        if (is_array($o) && globalkeys_from_xray_outbound($o)) $count++;
+    }
+    if ($count === 0) return null;
+    $name = trim((string) ($profile['remarks'] ?? ''));
+    return [
+        'ok' => true,
+        'type' => 'xray_profile',
+        'remark' => $name !== '' ? $name : 'Xray profile',
+        'profile' => $profile,
+        'vless_count' => $count,
+        'clients' => ['Xray JSON'],
+        'warnings' => [],
+        'notes' => ['Профиль сохраняется целиком: routing, balancers, observatory и outbounds не разбираются на отдельные ключи.'],
+    ];
+}
 function globalkeys_parse_input($raw, &$error = '') {
     $error = ''; $raw = trim((string) $raw); if ($raw === '') { $error = 'Вставьте VLESS URL или Xray JSON.'; return []; }
     $first = ltrim($raw)[0] ?? '';
     if ($first === '{' || $first === '[') {
         $j = json_decode($raw, true);
         if (!is_array($j) || json_last_error() !== JSON_ERROR_NONE) { $error = 'Некорректный JSON: ' . json_last_error_msg(); return []; }
-        $obs = isset($j['outbounds']) && is_array($j['outbounds']) ? $j['outbounds'] : (array_is_list($j) ? $j : [$j]);
+        // A complete Xray config is one logical host. Its balancers and routing
+        // depend on all embedded outbounds, so splitting it changes its meaning.
+        if (!array_is_list($j) && isset($j['outbounds'])) {
+            $profile = globalkeys_xray_profile($j);
+            if (!$profile) { $error = 'В JSON не найдено ни одного VLESS outbound.'; return []; }
+            return [$profile];
+        }
+        $obs = array_is_list($j) ? $j : [$j];
         $out = []; foreach ($obs as $o) { if (is_array($o) && ($p = globalkeys_from_xray_outbound($o))) { $p['remark'] = trim((string) ($o['tag'] ?? $p['remark'])); $out[] = $p; } }
         if (!$out) { $error = 'В JSON не найдено ни одного VLESS outbound.'; return []; }
         return $out;
@@ -129,6 +163,9 @@ function globalkeys_parse_input($raw, &$error = '') {
 }
 function globalkeys_fingerprint($p) {
     if (!is_array($p)) return '';
+    if (($p['type'] ?? '') === 'xray_profile') {
+        return hash('sha256', json_encode($p['profile'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    }
     $keys = ['uuid','host','port','net','security','sni','pbk','sid','path','hostHeader','serviceName','flow','encryption','fp']; $v = [];
     foreach ($keys as $k) $v[$k] = (string) ($p[$k] ?? '');
     return hash('sha256', json_encode($v, JSON_UNESCAPED_SLASHES));
@@ -138,7 +175,21 @@ function globalkeys_add_many(array $items, $raw_source, $source_type = 'vless', 
     try {
         $p->beginTransaction(); $st = $p->prepare('INSERT INTO global_keys (name, enabled, source_type, raw, parsed, sort_order) VALUES (?, 1, ?, ?, ?, ?)');
         $order = (int) ($p->query('SELECT COALESCE(MAX(sort_order), 0) FROM global_keys')->fetchColumn() ?? 0);
-        foreach ($items as $v) { $name = trim((string) ($v['remark'] ?? '')); if ($name === '') $name = 'VLESS ' . ($v['host'] ?? ''); $uri = globalkeys_make_uri($v, $name); if ($uri === '') throw new RuntimeException('Некорректный VLESS outbound.'); $order++; $st->execute([mb_substr($name, 0, 191), $source_type, $uri, json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $order]); }
+        foreach ($items as $v) {
+            $name = trim((string) ($v['remark'] ?? ''));
+            if (($v['type'] ?? '') === 'xray_profile') {
+                if ($name === '') $name = 'Xray profile';
+                $stored_raw = count($items) === 1 ? (string) $raw_source : json_encode($v['profile'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                $stored_type = 'xray_profile';
+            } else {
+                if ($name === '') $name = 'VLESS ' . ($v['host'] ?? '');
+                $stored_raw = globalkeys_make_uri($v, $name);
+                if ($stored_raw === '') throw new RuntimeException('Некорректный VLESS outbound.');
+                $stored_type = $source_type;
+            }
+            $order++;
+            $st->execute([mb_substr($name, 0, 191), $stored_type, $stored_raw, json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $order]);
+        }
         $p->commit(); return true;
     } catch (Throwable $e) { if ($p->inTransaction()) $p->rollBack(); $error = 'Импорт не выполнен: ' . $e->getMessage(); return false; }
 }
@@ -168,21 +219,54 @@ function globalkeys_configs_for_injection($body, $format) {
     $out = []; $added = [];
     foreach ($rows as $r) {
         $x = json_decode((string) ($r['parsed'] ?? ''), true); $f = globalkeys_fingerprint($x);
+        if (($x['type'] ?? '') === 'xray_profile') continue;
         if ($f === '' || isset($existing[$f]) || isset($added[$f])) continue;
         $out[] = $r; $added[$f] = true;
     }
     return $out;
 }
+function globalkeys_xray_profiles() {
+    $out = [];
+    foreach (globalkeys_all(true) as $r) {
+        $p = json_decode((string) ($r['parsed'] ?? ''), true);
+        if (!is_array($p) || ($p['type'] ?? '') !== 'xray_profile' || !is_array($p['profile'] ?? null)) continue;
+        $profile = $p['profile'];
+        $name = trim((string) ($r['name'] ?? ''));
+        if ($name !== '') $profile['remarks'] = $name;
+        $out[] = $profile;
+    }
+    return $out;
+}
+function globalkeys_inject_xray_profiles($body, array $profiles) {
+    if (!$profiles) return $body;
+    $obj = json_decode((string) $body);
+    // Remnawave represents several Xray hosts as an array of complete profiles.
+    // A standalone object cannot safely carry another complete profile.
+    if (!is_array($obj)) return $body;
+    $seen = [];
+    foreach ($obj as $profile) $seen[hash('sha256', json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))] = true;
+    foreach ($profiles as $profile) {
+        $fp = hash('sha256', json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        if (isset($seen[$fp])) continue;
+        $obj[] = json_decode(json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+        $seen[$fp] = true;
+    }
+    $enc = json_encode($obj, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    return $enc === false ? $body : $enc;
+}
 function globalkeys_inject($body, $format) {
-    $cfg = globalkeys_configs_for_injection($body, $format); if (!$cfg) return $body;
+    $cfg = globalkeys_configs_for_injection($body, $format);
+    $profiles = globalkeys_xray_profiles();
+    if (!$cfg && !$profiles) return $body;
     try {
         $trim = ltrim((string) $body);
         if (($trim[0] ?? '') === '{' || ($trim[0] ?? '') === '[') {
             $obj = json_decode($body, true);
-            if (squadconf_is_singbox($obj)) return squadconf_inject_singbox($body, $cfg);
+            if (squadconf_is_singbox($obj)) return $cfg ? squadconf_inject_singbox($body, $cfg) : $body;
             // Global keys are independent from the optional squad xray toggle.
-            return squadconf_inject_xray_json($body, $cfg);
+            if ($cfg) $body = squadconf_inject_xray_json($body, $cfg);
+            return globalkeys_inject_xray_profiles($body, $profiles);
         }
-        return squadconf_inject($body, $format, $cfg);
+        return $cfg ? squadconf_inject($body, $format, $cfg) : $body;
     } catch (Throwable $e) { error_log('submw globalkeys inject: ' . $e->getMessage()); return $body; }
 }

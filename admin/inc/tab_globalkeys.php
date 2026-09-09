@@ -15,7 +15,7 @@
         <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="add_globalkeys">
         <label for="gk_raw">VLESS URL или Xray JSON</label>
         <textarea id="gk_raw" name="raw" rows="10" spellcheck="false" placeholder="vless://…&#10;vless://…&#10;&#10;или { &quot;outbounds&quot;: […] }" style="width:100%;box-sizing:border-box;font-family:monospace"></textarea>
-        <p class="muted">Несколько VLESS URL — по одному на строку. Из полного Xray JSON импортируются только VLESS outbounds. Импорт атомарный.</p>
+        <p class="muted">Несколько VLESS URL — по одному на строку. Полный Xray JSON сохраняется одним цельным профилем для Xray-подписок; одиночный outbound импортируется как VLESS. Импорт атомарный.</p>
         <button class="btn" type="submit">Добавить</button>
     </form>
 </div>
@@ -25,7 +25,7 @@
 <?php foreach ($globalkeys_list as $gk): $gp = json_decode((string) $gk['parsed'], true); ?>
     <div class="gk-card">
         <div class="gk-head"><strong><?= h($gk['name'] ?: 'VLESS') ?></strong><span><?= (int) $gk['enabled'] === 1 ? '✓ Включён' : 'Выключен' ?></span></div>
-        <div class="gk-meta"><?= h(squadconf_summary($gp)) ?><br><?= h($gp['host'] ?? '') ?>:<?= (int) ($gp['port'] ?? 0) ?><br>Источник: <?= h($gk['source_type']) ?></div>
+        <div class="gk-meta"><?= h(globalkeys_summary($gp)) ?><?php if (($gp['type'] ?? '') !== 'xray_profile'): ?><br><?= h($gp['host'] ?? '') ?>:<?= (int) ($gp['port'] ?? 0) ?><?php endif; ?><br>Источник: <?= h($gk['source_type']) ?></div>
         <div class="gk-actions">
             <form method="post"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="toggle_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><input type="hidden" name="enabled" value="<?= (int) $gk['enabled'] === 1 ? '0' : '1' ?>"><button class="btn ghost" type="submit"><?= (int) $gk['enabled'] === 1 ? 'Выключить' : 'Включить' ?></button></form>
             <form method="post"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="move_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><button class="btn ghost" name="direction" value="up" type="submit">↑</button><button class="btn ghost" name="direction" value="down" type="submit">↓</button></form>
