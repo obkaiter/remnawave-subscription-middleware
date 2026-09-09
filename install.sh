@@ -32,7 +32,7 @@ if [ "$SCENARIO" = "2" ]; then
   cat > "$DEST/docker-compose.yml" <<YML
 services:
   remnawave-subscription-middleware:
-    image: ghcr.io/mrvibecodic/remnawave-subscription-middleware:${IMG_TAG}
+    image: ghcr.io/obkaiter/remnawave-subscription-middleware:${IMG_TAG}
     container_name: remnawave-subscription-middleware
     hostname: remnawave-subscription-middleware
     restart: always
@@ -67,7 +67,7 @@ YML
   echo "  2) Открыть https://${DOMAIN}/admin/ и завершить мастер (режим/адреса уже заданы окружением)."
   echo
   echo "Обновление: cd ${DEST} && docker compose pull && docker compose up -d"
-  echo "Инструкция: https://github.com/Mrvibecodic/remnawave-subscription-middleware/blob/main/INSTALL.md"
+  echo "Инструкция: https://github.com/obkaiter/remnawave-subscription-middleware/blob/main/INSTALL.md"
   exit 0
 fi
 

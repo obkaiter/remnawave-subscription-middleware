@@ -1,5 +1,7 @@
 # Remnawave Subscription Middleware
 
+> Production fork: [`obkaiter/remnawave-subscription-middleware`](https://github.com/obkaiter/remnawave-subscription-middleware), based on the original [`Mrvibecodic/remnawave-subscription-middleware`](https://github.com/Mrvibecodic/remnawave-subscription-middleware). This fork uses its own updater and `ghcr.io/obkaiter/remnawave-subscription-middleware` images. See [UPSTREAM.md](UPSTREAM.md) for maintainer synchronization.
+
 [![Telegram — группа](https://img.shields.io/badge/Telegram-%D0%B3%D1%80%D1%83%D0%BF%D0%BF%D0%B0-2aabee?logo=telegram&logoColor=white)](https://t.me/+2lmP1yhxpCE3MDcy)
 [![Telegram — чат](https://img.shields.io/badge/Telegram-%D1%87%D0%B0%D1%82-2aabee?logo=telegram&logoColor=white)](https://t.me/+8BJQXYXYLqM4YWYy)
 ![status: beta](https://img.shields.io/badge/status-beta-e2b341)
@@ -32,7 +34,7 @@
 
 ```bash
 sudo apt update && sudo apt install -y git
-sudo git clone https://github.com/Mrvibecodic/remnawave-subscription-middleware \
+sudo git clone https://github.com/obkaiter/remnawave-subscription-middleware \
     /opt/remnawave-subscription-middleware
 cd /opt/remnawave-subscription-middleware
 sudo bash install.sh        # выбрать «2) Рядом с панелью — Docker»
@@ -99,6 +101,7 @@ origin (часто доступный с сервера, даже если у к
 - **Версии клиентов** — второй экран «Лога запросов»: каталог клиентских приложений с источником актуальной версии (GitHub, App Store, Google Play, F-Droid, Codeberg или вручную). Прослойка берёт версию из User-Agent, сравнивает с актуальной, и у отставших появляется отметка в логе. Каталог редактируется: строки добавляются из встроенного списка, из блока «замечены в логе, но не в каталоге» или руками. Проверка ленивая — не чаще одного источника за заход в админку и раза в сутки на строку, запросы уходят только со страниц админки. Версия из User-Agent — это то, что сказал клиент, поэтому отметка «вышло обновление» показывается как подсказка.
 - **Правила ответа по приложению** — подмена заголовков подписки под конкретный клиент (profile-title, announce, интервал обновления и т.д.) по User-Agent и ОС.
 - **Доп. конфиги по сквадам (бета)** — добавляет в подписку конфиги WireGuard / AmneziaWG / VLESS по внутреннему скваду, подстраивая формат под клиент. У VLESS поддержаны транспорты raw/tcp, ws, httpupgrade, grpc, h2, xhttp, mKCP и QUIC, а также Reality, Vision и http-обфускация. Поддержка у клиентских ядер разная (например, xhttp нет в sing-box, а QUIC — в Xray): в админке у каждого конфига видно, каким клиентам он уйдёт, и несовместимому ядру он не отдаётся — вместо порчи всей подписки пропускается только этот конфиг. Заблокированному, истёкшему, исчерпавшему трафик и упёршемуся в лимит устройств ничего не подмешивается — статус сверяется с панелью. В формате xray-json каждый доп. конфиг собирается на шаблоне подписки из панели (по умолчанию `Default`, имя настраивается): у хостов панели бывают свои шаблоны, и без этого доп. конфиг наследовал бы правила маршрутизации случайного хоста.
+- **Глобальные VLESS-ключи (custom build)** — отдельная вкладка «Ключи» импортирует один или несколько `vless://` либо VLESS outbounds из Xray JSON и подмешивает их во все поддерживаемые форматы подписок. Для grace-пользователей функция всегда отключается независимо от их статуса `ACTIVE`.
 - **Пул WG/AWG-конфигов (бета)** — раздаёт готовые `.conf` из загруженного пула, закрепляя за подписчиком или устройством отдельный конфиг (один WG-ключ нельзя делить между устройствами).
 - **Слияние двух подписок** — узлы второй подписки подмешиваются в тело основной: клиент получает одну ссылку, серверы из обеих лежат вместе.
 - **Обновление с GitHub** — встроенное обновление по коммитам: тянет только изменённые файлы, делает бэкап с откатом. Пункт меню подсвечивается, когда есть что обновить.
@@ -131,7 +134,7 @@ origin (часто доступный с сервера, даже если у к
 
 ```bash
 sudo apt update && sudo apt install -y git
-sudo git clone https://github.com/Mrvibecodic/remnawave-subscription-middleware \
+sudo git clone https://github.com/obkaiter/remnawave-subscription-middleware \
     /opt/remnawave-subscription-middleware
 cd /opt/remnawave-subscription-middleware
 sudo bash install.sh        # выбрать «2) Рядом с панелью — Docker»
@@ -156,7 +159,7 @@ PHP-FPM + SQLite** (по умолчанию; опционально MySQL/MariaD
 
 ```bash
 sudo apt update && sudo apt install -y git
-sudo git clone https://github.com/Mrvibecodic/remnawave-subscription-middleware \
+sudo git clone https://github.com/obkaiter/remnawave-subscription-middleware \
     /opt/remnawave-subscription-middleware
 cd /opt/remnawave-subscription-middleware
 sudo bash install.sh        # выбрать «1) Отдельный сервер»

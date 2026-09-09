@@ -1,6 +1,10 @@
 <?php
 
-function update_repo() { return 'Mrvibecodic/remnawave-subscription-middleware'; }
+function update_repo() {
+    $repo = trim((string) setting('update_repository', 'obkaiter/remnawave-subscription-middleware'));
+    if (strcasecmp($repo, 'Mrvibecodic/remnawave-subscription-middleware') === 0) return 'obkaiter/remnawave-subscription-middleware';
+    return preg_match('~^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$~', $repo) ? $repo : 'obkaiter/remnawave-subscription-middleware';
+}
 function update_branch() {
     $b = trim((string) setting('update_branch', 'main'));
     return ($b !== '' && preg_match('~^[A-Za-z0-9._/\-]{1,80}$~', $b)) ? $b : 'main';

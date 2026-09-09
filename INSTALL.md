@@ -17,7 +17,7 @@
 ### Шаг 1. Поднять контейнер прослойки
 Через установщик:
 ```bash
-git clone https://github.com/Mrvibecodic/remnawave-subscription-middleware.git
+git clone https://github.com/obkaiter/remnawave-subscription-middleware.git
 cd remnawave-subscription-middleware
 sudo bash install.sh    # выбрать "2) Рядом с панелью — Docker"
 ```
@@ -27,7 +27,7 @@ sudo bash install.sh    # выбрать "2) Рядом с панелью — Do
 ```bash
 docker compose up -d remnawave-subscription-middleware
 ```
-Образ: `ghcr.io/mrvibecodic/remnawave-subscription-middleware:v1` (внутри nginx+php-fpm, код запечён; данные — в volume `submw-data`).
+Образ: `ghcr.io/obkaiter/remnawave-subscription-middleware:v1` (внутри nginx+php-fpm, код запечён; данные — в volume `submw-data`).
 
 ### Шаг 2. Направить домен подписки на прослойку (правка nginx ПАНЕЛИ)
 **eGames (nginx):** в конфиге nginx панели (обычно `/opt/remnawave/nginx.conf`) — одна строка:
@@ -58,7 +58,7 @@ docker compose pull && docker compose up -d
 ## Вариант 2. Отдельный сервер (прослойка одна)
 
 ```bash
-git clone https://github.com/Mrvibecodic/remnawave-subscription-middleware.git
+git clone https://github.com/obkaiter/remnawave-subscription-middleware.git
 cd remnawave-subscription-middleware
 sudo bash install.sh    # выбрать "1) Отдельный сервер"
 ```

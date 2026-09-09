@@ -6,7 +6,7 @@
 
 ## Какие теги публикуются
 
-Образ лежит в GHCR: `ghcr.io/mrvibecodic/remnawave-subscription-middleware`.
+Образ лежит в GHCR: `ghcr.io/obkaiter/remnawave-subscription-middleware`.
 
 | Тег | Что это | Кому |
 |---|---|---|
@@ -24,7 +24,7 @@
 **Если использовали `docker-compose.example.yml`** — строка образа параметризована:
 
 ```yaml
-image: ghcr.io/mrvibecodic/remnawave-subscription-middleware:${SUBMW_IMAGE_TAG:-latest}
+image: ghcr.io/obkaiter/remnawave-subscription-middleware:${SUBMW_IMAGE_TAG:-latest}
 ```
 
 Тег берётся из переменной `SUBMW_IMAGE_TAG`. Если её не задать — будет `latest`. Задать можно в файле `.env` рядом с `docker-compose.yml`:
