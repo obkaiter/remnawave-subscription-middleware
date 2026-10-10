@@ -1,0 +1,14 @@
+# Representative unmodified subscription response from the regular pipeline.
+port: 7890
+proxies:
+  - {name: panel, type: vless, server: panel.example.org, port: 443, uuid: 123e4567-e89b-12d3-a456-426614174000}
+proxy-providers: {}
+proxy-groups:
+  - {name: Auto, type: select, proxies: [panel]}
+rules:
+  - MATCH,Auto
+rule-providers: {}
+dns:
+  enable: true
+tun:
+  enable: false

@@ -102,7 +102,7 @@ fi
 echo "-> Установка зависимостей (если ещё нет)..."
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
-PKGS="php-fpm php-cli php-sqlite3 php-mysql php-curl php-mbstring php-xml git openssl curl gnupg2 ca-certificates lsb-release certbot"
+PKGS="php-fpm php-cli php-sqlite3 php-mysql php-curl php-mbstring php-xml python3 python3-yaml git openssl curl unzip gnupg2 ca-certificates lsb-release certbot"
 [ "$DB_MODE" = "2" ] && PKGS="$PKGS mariadb-server"
 [ "$CERT_MODE" = "2" ] && PKGS="$PKGS python3-certbot-dns-cloudflare"
 apt-get install -y $PKGS >/dev/null
@@ -277,6 +277,9 @@ server {
     location ^~ /lib/  { deny all; }
     location ^~ /backups/ { deny all; }
     location ^~ /docker/ { deny all; }
+    location ^~ /tools/ { deny all; }
+    location ^~ /tests/ { deny all; }
+    location ^~ /docs/ { deny all; }
 
     location = /webhook.php { fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name; include fastcgi_params; fastcgi_pass unix:${PHP_SOCK}; }
 
@@ -338,6 +341,39 @@ echo "-> Финальный конфиг nginx (HTTPS + вебхук + фрон�
 write_https_vhost
 enable_site
 nginx -t && systemctl reload nginx
+
+if [ "$(uname -m)" = x86_64 ] && [ ! -x /usr/local/bin/xray ]; then
+  curl -fsSL 'https://github.com/XTLS/Xray-core/releases/download/v26.9.9/Xray-linux-64.zip' -o /tmp/submw-xray.zip
+  echo '1eb9175d0f0a8f8149c9230a7fc5ae66ce332ed20a53155ce61fe62e3f58b7df  /tmp/submw-xray.zip' | sha256sum -c -
+  unzip -p /tmp/submw-xray.zip xray > /usr/local/bin/xray
+  chmod 755 /usr/local/bin/xray
+  rm /tmp/submw-xray.zip
+fi
+
+cat > /etc/systemd/system/submw-globalkeys.service <<EOF
+[Unit]
+Description=Subscription Middleware global key import worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=${DEST}
+ExecStart=/usr/bin/php ${DEST}/tools/globalkeys_worker.php --daemon
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=${DEST}/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload
+systemctl enable --now submw-globalkeys.service >/dev/null 2>&1 || true
 
 echo
 echo "================ ГОТОВО ================"

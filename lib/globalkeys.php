@@ -31,6 +31,37 @@ function globalkeys_ensure() {
 }
 
 function globalkeys_enabled() { return setting('globalkeys_enabled', '0') === '1'; }
+function globalkeys_is_xray_profile($obj) {
+    if (!is_array($obj) || array_is_list($obj) || !isset($obj['outbounds']) || !is_array($obj['outbounds']) || squadconf_is_singbox($obj)) return false;
+    foreach (['routing', 'policy', 'stats', 'observatory', 'burstObservatory'] as $key) if (isset($obj[$key])) return true;
+    foreach ($obj['outbounds'] as $outbound) if (is_array($outbound) && isset($outbound['protocol'])) return true;
+    foreach (($obj['inbounds'] ?? []) as $inbound) if (is_array($inbound) && isset($inbound['protocol'])) return true;
+    return false;
+}
+// Inspect the actual response as well as the existing request hint. Unknown and
+// YAML responses are deliberately excluded, including YAML served as text/plain.
+function globalkeys_response_type($body, $format, $content_type = '') {
+    $mime = strtolower(trim(explode(';', (string) $content_type)[0]));
+    $trim = ltrim((string) $body);
+    if ($format === 'clash' || preg_match('~(?:yaml|clash)~i', $mime)) return '';
+    if (preg_match('/^(?:proxies|proxy-providers|proxy-groups|rules|rule-providers|dns|tun)\s*:/m', $trim)) return '';
+    if ($mime === 'text/html' || $trim === '') return '';
+    if (($trim[0] ?? '') === '{' || ($trim[0] ?? '') === '[') {
+        $obj = json_decode($trim, true);
+        if (!is_array($obj) || json_last_error() !== JSON_ERROR_NONE) return '';
+        if (globalkeys_is_xray_profile($obj)) return 'xray';
+        if (array_is_list($obj) && $obj && count(array_filter($obj, 'globalkeys_is_xray_profile')) === count($obj)) return 'xray';
+        return '';
+    }
+    if ($mime !== '' && !in_array($mime, ['text/plain', 'application/octet-stream'], true)) return '';
+    $plain_lines = preg_split('/\r\n|\r|\n/', trim($trim));
+    if ($plain_lines && count(array_filter($plain_lines, fn($line) => preg_match('~^(?:vless|vmess|trojan|ss|hy2|hysteria2)://\S+$~i', trim($line)))) === count($plain_lines)) return 'plain_uri';
+    $decoded = base64_decode(preg_replace('/\s+/', '', $trim), true);
+    if (!is_string($decoded) || $decoded === '') return '';
+    $lines = preg_split('/\r\n|\r|\n/', trim($decoded));
+    foreach ($lines as $line) if (!preg_match('~^(?:vless|vmess|trojan|ss|hy2|hysteria2|wg|wireguard)://\S+$~i', trim($line))) return '';
+    return 'base64';
+}
 function globalkeys_all($enabled_only = false) {
     globalkeys_ensure();
     if (!($p = db())) return [];
@@ -70,6 +101,39 @@ function globalkeys_update_name($id, $name) {
     if (!($p = db()) || (int) $id <= 0) return false;
     try { return $p->prepare('UPDATE global_keys SET name = ? WHERE id = ?')->execute([mb_substr(trim((string) $name), 0, 191) ?: null, (int) $id]); }
     catch (Throwable $e) { return false; }
+}
+function globalkeys_version(array $row) {
+    return hash('sha256', json_encode([$row['raw'], $row['parsed'], $row['name'], $row['updated_at']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+}
+function globalkeys_validate_single($raw, &$error = '') {
+    $items = globalkeys_parse_input($raw, $error);
+    if ($error !== '') return null;
+    if (count($items) !== 1) { $error = 'Одна запись должна содержать ровно один ключ или один полный Xray профиль.'; return null; }
+    return $items[0];
+}
+function globalkeys_update($id, $name, $raw, $version, &$error = '') {
+    $error = '';
+    $item = globalkeys_validate_single($raw, $error);
+    if (!$item) return false;
+    $name = trim((string) $name);
+    if ($name === '' || mb_strlen($name) > 191) { $error = 'Укажите название длиной до 191 символа.'; return false; }
+    globalkeys_ensure();
+    if (!($p = db()) || (int) $id <= 0) { $error = 'Запись не найдена.'; return false; }
+    try {
+        $p->beginTransaction();
+        $st = $p->prepare('SELECT * FROM global_keys WHERE id = ?');
+        $st->execute([(int) $id]); $old = $st->fetch();
+        if (!$old || !hash_equals(globalkeys_version($old), (string) $version)) {
+            $p->rollBack(); $error = 'Запись уже изменена. Обновите страницу и повторите правку.'; return false;
+        }
+        $parsed = json_encode($item, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+        if ($parsed === false) throw new RuntimeException('Не удалось сохранить JSON.');
+        $type = ($item['type'] ?? '') === 'xray_profile' ? 'xray_profile' : ((ltrim((string) $raw)[0] ?? '') === '{' ? 'xray_json' : 'vless');
+        $st = $p->prepare('UPDATE global_keys SET name = ?, raw = ?, parsed = ?, source_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND raw = ? AND parsed = ? AND (name = ? OR (name IS NULL AND ? IS NULL)) AND updated_at = ?');
+        $st->execute([$name, (string) $raw, $parsed, $type, (int) $id, $old['raw'], $old['parsed'], $old['name'], $old['name'], $old['updated_at']]);
+        if ($st->rowCount() !== 1) { $p->rollBack(); $error = 'Запись уже изменена. Обновите страницу.'; return false; }
+        $p->commit(); return true;
+    } catch (Throwable $e) { if ($p->inTransaction()) $p->rollBack(); $error = 'Не удалось сохранить ключ.'; return false; }
 }
 
 function globalkeys_summary($parsed) {
@@ -166,9 +230,11 @@ function globalkeys_fingerprint($p) {
     if (($p['type'] ?? '') === 'xray_profile') {
         return hash('sha256', json_encode($p['profile'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
-    $keys = ['uuid','host','port','net','security','sni','pbk','sid','path','hostHeader','serviceName','flow','encryption','fp']; $v = [];
-    foreach ($keys as $k) $v[$k] = (string) ($p[$k] ?? '');
-    return hash('sha256', json_encode($v, JSON_UNESCAPED_SLASHES));
+    // Names and UI diagnostics are not part of the connection identity. Keep
+    // every transport/security parameter, including future parser fields.
+    foreach (['ok','type','version','clients','warnings','notes','remark'] as $k) unset($p[$k]);
+    ksort($p);
+    return hash('sha256', json_encode($p, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
 function globalkeys_add_many(array $items, $raw_source, $source_type = 'vless', &$error = '') {
     globalkeys_ensure(); $error = ''; if (!$items || !($p = db())) { $error = 'Не удалось подготовить импорт.'; return false; }
@@ -201,19 +267,21 @@ function globalkeys_user_is_grace($short) {
     if ($uuid !== '' && function_exists('squadconf_user_squads')) return in_array($uuid, squadconf_user_squads($short), true);
     return false;
 }
-function globalkeys_configs_for_injection($body, $format) {
+function globalkeys_configs_for_injection($body, $format, $include_auto = true) {
     if (!globalkeys_enabled()) return [];
-    $rows = globalkeys_all(true); if (!$rows) return [];
+    $rows = array_merge(globalkeys_all(true), $include_auto ? gki_published_rows() : []); if (!$rows) return [];
     $existing = [];
     // JSON bodies can be inspected losslessly; for opaque formats the existing
     // squadconf pipeline remains authoritative and the original body is kept.
     $trim = ltrim((string) $body);
     if (($trim[0] ?? '') === '{' || ($trim[0] ?? '') === '[') {
         $j = json_decode($body, true);
-        $obs = isset($j['outbounds']) && is_array($j['outbounds']) ? $j['outbounds'] : [];
-        foreach ($obs as $o) { $x = globalkeys_from_xray_outbound((array) $o); if ($x) $existing[globalkeys_fingerprint($x)] = true; }
+        $profiles = isset($j['outbounds']) && is_array($j['outbounds']) ? [$j] : (is_array($j) && array_is_list($j) ? $j : []);
+        foreach ($profiles as $profile) {
+            foreach (($profile['outbounds'] ?? []) as $o) { $x = globalkeys_from_xray_outbound((array) $o); if ($x) $existing[globalkeys_fingerprint($x)] = true; }
+        }
     } elseif ($format !== 'clash') {
-        $decoded = base64_decode(trim((string) $body), true);
+        $decoded = str_contains((string) $body, '://') ? (string) $body : base64_decode(trim((string) $body), true);
         if (is_string($decoded)) foreach (preg_split('/\r\n|\r|\n/', $decoded) as $line) { $line = trim($line); if (stripos($line, 'vless://') === 0) { $x = vless_parse($line); if (!empty($x['ok'])) $existing[globalkeys_fingerprint($x)] = true; } }
     }
     $out = []; $added = [];
@@ -224,6 +292,26 @@ function globalkeys_configs_for_injection($body, $format) {
         $out[] = $r; $added[$f] = true;
     }
     return $out;
+}
+function globalkeys_inject_plain($body, array $configs) {
+    if (!$configs) return $body;
+    $names = [];
+    foreach (preg_split('/\r\n|\r|\n/', trim((string) $body)) as $line) {
+        if (stripos(trim($line), 'vless://') === 0) { $p = vless_parse(trim($line)); if (!empty($p['ok'])) $names[(string) ($p['remark'] ?? '')] = true; }
+    }
+    $uris = [];
+    foreach ($configs as $row) {
+        $p = json_decode((string) ($row['parsed'] ?? ''), true);
+        if (!is_array($p) || ($p['type'] ?? '') !== 'vless') continue;
+        $base = trim((string) ($row['name'] ?? '')) ?: 'VLESS'; $name = $base; $n = 2;
+        while (isset($names[$name])) $name = $base . ' (' . $n++ . ')';
+        $uri = vless_relabel_uri((string) $row['raw'], $name);
+        if ($uri === '') continue;
+        $names[$name] = true; $uris[] = $uri;
+    }
+    if (!$uris) return $body;
+    $separator = str_contains((string) $body, "\r\n") ? "\r\n" : "\n";
+    return rtrim((string) $body, "\r\n") . $separator . implode($separator, $uris);
 }
 function globalkeys_xray_profiles() {
     $out = [];
@@ -254,19 +342,25 @@ function globalkeys_inject_xray_profiles($body, array $profiles) {
     $enc = json_encode($obj, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
     return $enc === false ? $body : $enc;
 }
-function globalkeys_inject($body, $format) {
-    $cfg = globalkeys_configs_for_injection($body, $format);
-    $profiles = globalkeys_xray_profiles();
+function globalkeys_inject($body, $format, $content_type = '') {
+    if (!globalkeys_enabled()) return $body;
+    $target = globalkeys_response_type($body, $format, $content_type);
+    if ($target === '') return $body;
+    $array_xray = $target === 'xray' && is_array(json_decode($body)) && array_is_list(json_decode($body, true));
+    $use_template = $array_xray && setting('gki_xray_template', '') !== '';
+    $cfg = globalkeys_configs_for_injection($body, $format, !$use_template);
+    $profiles = $target === 'xray' ? globalkeys_xray_profiles() : [];
+    if ($use_template && ($generated = gki_template_profile())) $profiles[] = $generated;
     if (!$cfg && !$profiles) return $body;
     try {
         $trim = ltrim((string) $body);
-        if (($trim[0] ?? '') === '{' || ($trim[0] ?? '') === '[') {
+        if ($target === 'xray') {
             $obj = json_decode($body, true);
-            if (squadconf_is_singbox($obj)) return $cfg ? squadconf_inject_singbox($body, $cfg) : $body;
             // Global keys are independent from the optional squad xray toggle.
             if ($cfg) $body = squadconf_inject_xray_json($body, $cfg);
             return globalkeys_inject_xray_profiles($body, $profiles);
         }
-        return $cfg ? squadconf_inject($body, $format, $cfg) : $body;
+        if ($target === 'plain_uri') return globalkeys_inject_plain($body, $cfg);
+        return $cfg ? squadconf_inject_base64($body, $cfg) : $body;
     } catch (Throwable $e) { error_log('submw globalkeys inject: ' . $e->getMessage()); return $body; }
 }

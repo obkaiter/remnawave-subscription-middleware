@@ -244,3 +244,27 @@ CREATE TABLE IF NOT EXISTS global_keys (
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order);
+
+CREATE TABLE IF NOT EXISTS globalkey_import_sources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, url TEXT NOT NULL,
+    enabled INTEGER NOT NULL DEFAULT 1, last_status TEXT NOT NULL DEFAULT 'new',
+    last_count INTEGER NOT NULL DEFAULT 0, last_error TEXT NULL,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+CREATE TABLE IF NOT EXISTS globalkey_import_nodes (
+    fingerprint TEXT PRIMARY KEY, name TEXT NOT NULL, uri TEXT NOT NULL, parsed TEXT NOT NULL,
+    source_ids TEXT NOT NULL, status TEXT NOT NULL, rtt_ms INTEGER NULL,
+    reason TEXT NULL, failures INTEGER NOT NULL DEFAULT 0,
+    was_published INTEGER NOT NULL DEFAULT 0, checked_at TEXT NULL
+);
+CREATE TABLE IF NOT EXISTS globalkey_import_builds (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_epoch INTEGER NOT NULL DEFAULT 0,
+    body TEXT NOT NULL, node_count INTEGER NOT NULL, content_hash TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS globalkey_import_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    finished_at TEXT NULL, status TEXT NOT NULL, trigger_type TEXT NOT NULL DEFAULT 'scheduled', source_count INTEGER NOT NULL DEFAULT 0,
+    found_count INTEGER NOT NULL DEFAULT 0, unique_count INTEGER NOT NULL DEFAULT 0,
+    working_count INTEGER NOT NULL DEFAULT 0, message TEXT NULL
+);

@@ -83,7 +83,7 @@ if ($query) $target_url .= '?' . $query;
 // останется со старым закэшированным списком (заметно на iOS — Happ шлёт
 // If-None-Match). Срезаем их — панель всегда отдаёт полное тело. Для чистого
 // зеркала (обе функции выключены) поведение остаётся байт-в-байт прежним.
-$strip_conditional = !$junk_path && (addsub_enabled() || squadconf_any() || globalkeys_enabled());
+$strip_conditional = !$junk_path && (addsub_enabled() || squadconf_any());
 $conditional_hdrs = ['if-none-match', 'if-modified-since', 'if-match', 'if-unmodified-since', 'if-range'];
 
 $request_headers = [];
@@ -216,6 +216,41 @@ $ip     = client_ip();
 $ua     = $_SERVER['HTTP_USER_AGENT'] ?? '';
 $segs   = path_segments($path);
 $format = detect_client_format();
+
+// A conditional GET may have returned 304 without a body. Only for the Keys
+// extension, fetch a full copy to identify the actual format. Preserve the
+// original 304 and headers verbatim if it is Mihomo, unknown, or fetch fails.
+if ($http_code === 304 && globalkeys_enabled() && !$junk_path && $format !== 'clash'
+    && ($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET') {
+    $fresh_headers = []; $fresh_request_headers = [];
+    foreach ($request_headers as $line) {
+        $key = strtolower(trim(explode(':', $line, 2)[0]));
+        if (!in_array($key, $conditional_hdrs, true)) $fresh_request_headers[] = $line;
+    }
+    $retry = curl_init();
+    curl_setopt_array($retry, [
+        CURLOPT_URL => $target_url, CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_FOLLOWLOCATION => true, CURLOPT_MAXREDIRS => 5,
+        CURLOPT_TIMEOUT => proxy_timeout(), CURLOPT_SSL_VERIFYPEER => api_tls_verify(),
+        CURLOPT_SSL_VERIFYHOST => api_tls_verify() ? 2 : 0,
+        CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1, CURLOPT_ENCODING => '',
+        CURLOPT_HTTPHEADER => $fresh_request_headers,
+        CURLOPT_HEADERFUNCTION => function ($curl, $header) use (&$fresh_headers) {
+            $trim = trim($header);
+            if ($trim !== '' && strpos($trim, 'HTTP/') !== 0) {
+                $parts = explode(':', $trim, 2);
+                if (count($parts) === 2) $fresh_headers[strtolower(trim($parts[0]))] = trim($parts[1]);
+            }
+            return strlen($header);
+        },
+    ]);
+    $fresh_body = curl_exec($retry);
+    $fresh_code = curl_getinfo($retry, CURLINFO_HTTP_CODE);
+    if ($fresh_body !== false && $fresh_code === 200
+        && globalkeys_response_type($fresh_body, $format, $fresh_headers['content-type'] ?? '') !== '') {
+        $response = $fresh_body; $http_code = $fresh_code; $grabbed_headers = $fresh_headers;
+    }
+}
 
 $short_ov = find_override_in('shortuuid', $segs);
 
@@ -444,9 +479,11 @@ if ($decision === 'normal' && $short_uuid !== '' && !$junk_path && addsub_enable
 
 $log_global = 0;
 if ($decision === 'normal' && $short_uuid !== '' && !$junk_path && !globalkeys_user_is_grace($short_uuid)
-    && globalkeys_enabled() && !$is_page && $response !== '') {
+    && !$panel_hwid_block && (squadconf_user_state($gate_short)['status'] ?? '') === 'ACTIVE'
+    && globalkeys_enabled() && !$is_page && $response !== ''
+    && globalkeys_response_type($response, $format, $grabbed_headers['content-type'] ?? '') !== '') {
     $before_global = $response;
-    $response = globalkeys_inject($response, $format);
+    $response = globalkeys_inject($response, $format, $grabbed_headers['content-type'] ?? '');
     $log_global = ($response !== $before_global) ? count(globalkeys_all(true)) : 0;
 }
 

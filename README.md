@@ -1,5 +1,7 @@
 # Remnawave Subscription Middleware
 
+Настройка ручных ключей и автоматического импорта: [docs/globalkeys-import.md](docs/globalkeys-import.md).
+
 > Production fork: [`obkaiter/remnawave-subscription-middleware`](https://github.com/obkaiter/remnawave-subscription-middleware), based on the original [`Mrvibecodic/remnawave-subscription-middleware`](https://github.com/Mrvibecodic/remnawave-subscription-middleware). This fork uses its own updater and `ghcr.io/obkaiter/remnawave-subscription-middleware` images. See [UPSTREAM.md](UPSTREAM.md) for maintainer synchronization.
 
 [![Telegram — группа](https://img.shields.io/badge/Telegram-%D0%B3%D1%80%D1%83%D0%BF%D0%BF%D0%B0-2aabee?logo=telegram&logoColor=white)](https://t.me/+2lmP1yhxpCE3MDcy)

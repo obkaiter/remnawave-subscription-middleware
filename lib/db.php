@@ -564,12 +564,14 @@ function db_migrate(array $from, array $to, &$err = '') {
         $dst->exec(ddl_metrics_minute($drv));
         $dst->exec(ddl_metrics_peak($drv));
         foreach (migrate_extra_ddl($drv) as $sql) { try { $dst->exec($sql); } catch (Throwable $e) {} }
+        if (function_exists('gki_ensure')) gki_ensure($dst, $drv);
     } catch (Throwable $e) { $err = 'подготовка приёмника: ' . $e->getMessage(); return false; }
 
     $tables = db_list_tables($src, $sdrv);
     if (!$tables) {
         $tables = ['settings', 'overrides', 'request_log', 'webhook_log', 'forward_log', 'grace_users',
                    'chat_sessions', 'chat_messages', 'metrics_minute', 'metrics_peak', 'squad_configs', 'global_keys',
+                   'globalkey_import_sources', 'globalkey_import_nodes', 'globalkey_import_builds', 'globalkey_import_runs',
                    'squad_cache', 'wg_lease', 'hwid_devices', 'wg_user_cache', 'addsub_map', 'addsub_cache', 'login_attempts', 'junk_hits'];
     }
     $verb = ($drv === 'mysql') ? 'REPLACE' : 'INSERT OR REPLACE';

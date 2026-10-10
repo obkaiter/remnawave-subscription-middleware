@@ -283,6 +283,34 @@ if (!is_auth()) {
 if (isset($_GET['ajax']) && is_auth()) {
     header('Content-Type: application/json; charset=utf-8');
     $a = $_GET['ajax'];
+    if ($a === 'gki_export') {
+        if (!csrf_ok_get()) { http_response_code(400); echo json_encode(['ok' => false, 'error' => 'CSRF']); exit(); }
+        $rows = gki_latest_build_rows();
+        if (!$rows) { http_response_code(404); echo json_encode(['ok' => false, 'error' => 'Нет сохранённой сборки']); exit(); }
+        if (($_GET['format'] ?? '') === 'xray') {
+            $profile = gki_template_profile($rows);
+            if (!$profile) { http_response_code(400); echo json_encode(['ok' => false, 'error' => 'Нет Xray шаблона']); exit(); }
+            header('Content-Type: application/json; charset=utf-8');
+            header('Content-Disposition: attachment; filename="globalkeys-preview.json"');
+            echo json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT); exit();
+        }
+        $uris = [];
+        foreach ($rows as $row) {
+            $parsed = json_decode((string) ($row['parsed'] ?? ''), true);
+            if (!is_array($parsed) || ($parsed['type'] ?? '') !== 'vless') continue;
+            $u = vless_relabel_uri((string) ($row['raw'] ?? ''), (string) ($row['name'] ?? 'VLESS'));
+            if ($u !== '') $uris[] = $u;
+        }
+        header('Content-Type: text/plain; charset=utf-8');
+        header('Content-Disposition: attachment; filename="globalkeys-preview.txt"');
+        echo implode("\n", $uris) . "\n"; exit();
+    }
+    if ($a === 'globalkey_validate' && ($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+        if (!csrf_ok()) { http_response_code(400); echo json_encode(['ok' => false, 'error' => 'CSRF']); exit(); }
+        $error = ''; $item = globalkeys_validate_single($_POST['raw'] ?? '', $error);
+        echo json_encode(['ok' => $item !== null, 'error' => $error, 'summary' => $item ? globalkeys_summary($item) : ''], JSON_UNESCAPED_UNICODE);
+        exit();
+    }
 
     // Параметр uuid здесь — идентификатор пользователя в любом из двух видов:
     // UUID (панель 2.x) или числовой id (панель 3.x). Тип восстанавливается по
@@ -1262,6 +1290,53 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && is_auth()) {
         flash('Настройки глобальных ключей сохранены');
         form_saved('globalkeys');
     }
+    if ($action === 'gki_settings') {
+        set_setting('gki_enabled', isset($_POST['enabled']) ? '1' : '0');
+        set_setting('gki_publish', isset($_POST['publish']) ? '1' : '0');
+        set_setting('gki_partial', isset($_POST['partial']) ? '1' : '0');
+        set_setting('gki_publish_unchecked', isset($_POST['publish_unchecked']) ? '1' : '0');
+        set_setting('gki_interval', (string) max(5, min(1440, (int) ($_POST['interval'] ?? 60))));
+        set_setting('gki_timeout', (string) max(2, min(20, (int) ($_POST['timeout'] ?? 5))));
+        set_setting('gki_retries', (string) max(1, min(3, (int) ($_POST['retries'] ?? 2))));
+        set_setting('gki_max_age', (string) max(60, min(604800, (int) ($_POST['max_age'] ?? 86400))));
+        set_setting('gki_deadline', (string) max(30, min(3600, (int) ($_POST['deadline'] ?? 600))));
+        set_setting('gki_max_rtt', (string) max(0, min(60000, (int) ($_POST['max_rtt'] ?? 0))));
+        set_setting('gki_concurrency', (string) max(1, min(16, (int) ($_POST['concurrency'] ?? 8))));
+        set_setting('gki_failure_threshold', (string) max(1, min(10, (int) ($_POST['failure_threshold'] ?? 2))));
+        $check_url = trim((string) ($_POST['check_url'] ?? ''));
+        if (gki_public_url($check_url)) set_setting('gki_check_url', $check_url);
+        set_setting('gki_check_code', (string) max(100, min(599, (int) ($_POST['check_code'] ?? 204))));
+        flash('Настройки автоматического импорта сохранены');
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'gki_source') {
+        $err = '';
+        if (gki_source_save((int) ($_POST['id'] ?? 0), $_POST['name'] ?? '', $_POST['url'] ?? '', isset($_POST['enabled']), $err)) flash('Источник сохранён');
+        else flash($err ?: 'Не удалось сохранить источник');
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'gki_delete_source') {
+        gki_source_delete((int) ($_POST['id'] ?? 0)); flash('Источник удалён. Обновите пул, чтобы исключить его ключи.');
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'gki_test_source') {
+        set_setting('gki_test_source_id', (string) max(0, (int) ($_POST['id'] ?? 0)));
+        flash('Тест источника поставлен в очередь.');
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'gki_run_now') {
+        set_setting('gki_requested', '1'); flash('Сборка поставлена в очередь фонового worker.');
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'gki_template') {
+        $raw = trim((string) ($_POST['template'] ?? ''));
+        $err = '';
+        if ($raw === '' || gki_template_validate($raw, $err)) {
+            set_setting('gki_xray_template', $raw);
+            flash($raw === '' ? 'Шаблон отключён' : 'Шаблон Xray JSON сохранён');
+        } else flash($err);
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
     if ($action === 'add_globalkeys') {
         $err = ''; $raw = (string) ($_POST['raw'] ?? '');
         $items = globalkeys_parse_input($raw, $err);
@@ -1269,6 +1344,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && is_auth()) {
         if ($err !== '') flash($err);
         elseif (!globalkeys_add_many($items, $raw, in_array($first, ['{', '['], true) ? 'xray_json' : 'vless', $err)) flash($err);
         else flash('Добавлено глобальных ключей: ' . count($items));
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
+    if ($action === 'edit_globalkey') {
+        $err = '';
+        $ok = globalkeys_update((int) ($_POST['id'] ?? 0), $_POST['name'] ?? '', $_POST['raw'] ?? '', $_POST['version'] ?? '', $err);
+        if (!empty($_POST['xhr'])) { header('Content-Type: application/json; charset=utf-8'); echo json_encode(['ok' => $ok, 'error' => $err], JSON_UNESCAPED_UNICODE); exit(); }
+        flash($ok ? 'Ключ сохранён' : $err);
         header('Location: index.php?tab=globalkeys'); exit();
     }
     if ($action === 'toggle_globalkey') { globalkeys_toggle((int) ($_POST['id'] ?? 0), ($_POST['enabled'] ?? '0') === '1'); header('Location: index.php?tab=globalkeys'); exit(); }
@@ -1524,6 +1606,14 @@ if ($tab === 'wg_pool') {
 $addsub_list = [];
 if ($tab === 'addsub') $addsub_list = addsub_map_all();
 $globalkeys_list = $tab === 'globalkeys' ? globalkeys_all() : [];
+$gki_sources = $tab === 'globalkeys' ? gki_rows('globalkey_import_sources') : [];
+$gki_page = max(1, (int) ($_GET['gki_page'] ?? 1));
+$gki_run_page = max(1, (int) ($_GET['gki_run_page'] ?? 1));
+$gki_nodes = $tab === 'globalkeys' ? gki_rows('globalkey_import_nodes', 100, ($gki_page - 1) * 100) : [];
+$gki_runs = $tab === 'globalkeys' ? gki_rows('globalkey_import_runs', 30, ($gki_run_page - 1) * 30) : [];
+$gki_node_count = $tab === 'globalkeys' ? gki_count('globalkey_import_nodes') : 0;
+$gki_run_count = $tab === 'globalkeys' ? gki_count('globalkey_import_runs') : 0;
+$gki_preview_count = $tab === 'globalkeys' ? count(gki_latest_build_rows()) : 0;
 $mirror        = mirror_domain();
 $wh_url        = ($mirror !== '' ? ('https://' . $mirror . '/webhook.php') : '/webhook.php');
 

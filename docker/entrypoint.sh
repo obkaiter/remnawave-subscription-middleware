@@ -16,6 +16,11 @@ JSON
 fi
 chown -R www-data:www-data "$DEST/data"
 
+# Key imports run independently of subscription requests. flock in the worker
+# also prevents overlap with manual/cron invocations.
+su -s /bin/sh www-data -c 'php /var/www/html/tools/globalkeys_worker.php --daemon' &
+GKI=$!
+
 # Запускаем php-fpm и nginx под простым присмотром: если любой из них падает,
 # выходим с ошибкой, чтобы docker (restart) перезапустил контейнер, а не висел с 502.
 php-fpm -F &
@@ -23,10 +28,10 @@ FPM=$!
 nginx -g 'daemon off;' &
 NGINX=$!
 
-while kill -0 "$FPM" 2>/dev/null && kill -0 "$NGINX" 2>/dev/null; do
+while kill -0 "$FPM" 2>/dev/null && kill -0 "$NGINX" 2>/dev/null && kill -0 "$GKI" 2>/dev/null; do
   sleep 5
 done
 
 echo "submw: один из процессов завершился (fpm=$FPM nginx=$NGINX), выхожу для перезапуска контейнера" >&2
-kill "$FPM" "$NGINX" 2>/dev/null || true
+kill "$FPM" "$NGINX" "$GKI" 2>/dev/null || true
 exit 1
