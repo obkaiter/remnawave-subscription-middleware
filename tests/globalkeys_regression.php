@@ -12,6 +12,7 @@ require dirname(__DIR__) . '/lib/globalkeys.php';
 require dirname(__DIR__) . '/lib/globalkey_import.php';
 
 $GLOBALS['pdo'] = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+$GLOBALS['pdo']->exec("CREATE TABLE global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
 $GLOBALS['settings'] = ['globalkeys_enabled' => '1', 'gki_enabled' => '1', 'gki_publish' => '1'];
 $golden = file_get_contents(__DIR__ . '/fixtures/mihomo.yaml');
 $uri = 'vless://123e4567-e89b-12d3-a456-426614174001@one.example.org:443?security=tls&type=ws&path=%2Fabc#One';
@@ -25,6 +26,7 @@ $same('empty');
 $error = ''; $parsed = globalkeys_parse_input($uri, $error);
 check($error === '' && count($parsed) === 1, 'parse URI');
 check(globalkeys_add_many($parsed, $uri, 'vless', $error), 'add URI');
+check((int) globalkeys_all()[0]['subscription_position'] === 0, 'legacy table migrated with default position');
 $same('manual added');
 $row = globalkeys_all()[0]; $id = (int) $row['id']; $version = globalkeys_version($row);
 $new = str_replace('/abc', '/new', $uri);
@@ -47,6 +49,40 @@ $GLOBALS['settings']['gki_enabled'] = '1';
 $GLOBALS['settings']['globalkeys_enabled'] = '0'; $same('master off');
 $GLOBALS['settings']['globalkeys_enabled'] = '1';
 globalkeys_delete($id); $same('manual removed');
+
+$GLOBALS['settings']['gki_publish'] = '0';
+$positions = [-2, -1, 0, 1];
+$position_ids = [];
+foreach ($positions as $i => $position) {
+    $key = str_replace(['174001', 'one.example.org', '#One'], [sprintf('174%03d', $i + 10), 'extra' . $i . '.example.org', '#Extra' . $i], $uri);
+    $item = globalkeys_parse_input($key, $error);
+    check(globalkeys_add_many($item, $key, 'vless', $error), 'position key added');
+    $rows = globalkeys_all(); $last = end($rows);
+    $position_ids[] = (int) $last['id'];
+    check(globalkeys_set_position($last['id'], (string) $position, $error), 'position saved: ' . $error);
+}
+check(!globalkeys_set_position($position_ids[0], '1.5', $error), 'fractional position rejected');
+check((int) globalkeys_all()[0]['subscription_position'] === -2, 'invalid position unchanged');
+$panel = [
+    str_replace('one.example.org', 'panel0.example.org', $uri),
+    str_replace('one.example.org', 'panel1.example.org', $uri),
+    str_replace('one.example.org', 'panel2.example.org', $uri),
+];
+$expected_hosts = ['panel0', 'extra0', 'panel1', 'extra1', 'panel2', 'extra2', 'extra3'];
+$hosts = function ($lines) { return array_map(fn($line) => parse_url($line, PHP_URL_HOST), $lines); };
+$expected = array_map(fn($name) => $name . '.example.org', $expected_hosts);
+$plain_result = globalkeys_inject(implode("\n", $panel), 'base64', 'text/plain');
+check($hosts(explode("\n", $plain_result)) === $expected, 'plain URI positions');
+$base64_result = base64_decode(globalkeys_inject(base64_encode(implode("\n", $panel)), 'base64', 'text/plain'), true);
+check($hosts(explode("\n", $base64_result)) === $expected, 'base64 URI positions');
+$array_panel = array_map(fn($name) => ['remarks' => $name, 'outbounds' => [['protocol' => 'freedom', 'tag' => 'direct']], 'routing' => ['rules' => []]], ['Panel0', 'Panel1', 'Panel2']);
+$array_result = json_decode(globalkeys_inject(json_encode($array_panel), 'base64', 'application/json'), true);
+check(array_column($array_result, 'remarks') === ['Panel0', 'Extra0', 'Panel1', 'Extra1', 'Panel2', 'Extra2', 'Extra3'], 'Xray profile positions');
+$object_panel = ['outbounds' => [['protocol' => 'freedom', 'tag' => 'first'], ['protocol' => 'freedom', 'tag' => 'second'], ['protocol' => 'freedom', 'tag' => 'third']], 'routing' => ['rules' => []]];
+$object_result = json_decode(globalkeys_inject(json_encode($object_panel), 'base64', 'application/json'), true);
+check(count($object_result['outbounds']) === 7 && $object_result['outbounds'][1]['settings']['vnext'][0]['address'] === 'extra0.example.org' && $object_result['outbounds'][3]['settings']['vnext'][0]['address'] === 'extra1.example.org', 'Xray outbound positions');
+foreach ($position_ids as $position_id) globalkeys_delete($position_id);
+$GLOBALS['settings']['gki_publish'] = '1';
 
 $unknown = 'Something else entirely';
 check(globalkeys_inject($unknown, 'base64', 'text/plain') === $unknown, 'unknown format');

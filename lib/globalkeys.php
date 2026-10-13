@@ -14,6 +14,7 @@ function globalkeys_ensure() {
                 name VARCHAR(191) NULL, enabled TINYINT(1) NOT NULL DEFAULT 1,
                 source_type VARCHAR(32) NOT NULL DEFAULT 'vless', raw MEDIUMTEXT NOT NULL,
                 parsed MEDIUMTEXT NOT NULL, sort_order INT NOT NULL DEFAULT 0,
+                subscription_position INT NOT NULL DEFAULT 0,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id), KEY idx_gk_enabled (enabled, sort_order)
@@ -22,10 +23,15 @@ function globalkeys_ensure() {
             $p->exec("CREATE TABLE IF NOT EXISTS global_keys (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1,
                 source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL,
-                sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                sort_order INTEGER NOT NULL DEFAULT 0, subscription_position INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             )");
             $p->exec('CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order)');
+        }
+        try { $p->query('SELECT subscription_position FROM global_keys LIMIT 0'); }
+        catch (Throwable $e) {
+            $p->exec('ALTER TABLE global_keys ADD COLUMN subscription_position ' . (db_driver() === 'mysql' ? 'INT' : 'INTEGER') . ' NOT NULL DEFAULT 0');
         }
     } catch (Throwable $e) { error_log('submw globalkeys ensure: ' . $e->getMessage()); }
 }
@@ -101,6 +107,29 @@ function globalkeys_update_name($id, $name) {
     if (!($p = db()) || (int) $id <= 0) return false;
     try { return $p->prepare('UPDATE global_keys SET name = ? WHERE id = ?')->execute([mb_substr(trim((string) $name), 0, 191) ?: null, (int) $id]); }
     catch (Throwable $e) { return false; }
+}
+function globalkeys_parse_position($value, &$error = '') {
+    $error = '';
+    $value = trim((string) $value);
+    if (!preg_match('/^-?(?:0|[1-9][0-9]*)$/', $value) || filter_var($value, FILTER_VALIDATE_INT) === false || (int) $value < -2147483648 || (int) $value > 2147483647) {
+        $error = 'Сортировка должна быть целым числом от −2147483648 до 2147483647.'; return null;
+    }
+    return (int) $value;
+}
+function globalkeys_set_position($id, $value, &$error = '') {
+    $position = globalkeys_parse_position($value, $error);
+    if ($position === null) return false;
+    globalkeys_ensure();
+    if (!($p = db()) || (int) $id <= 0) { $error = 'Ключ не найден.'; return false; }
+    try {
+        $st = $p->prepare('UPDATE global_keys SET subscription_position = ? WHERE id = ?');
+        $st->execute([$position, (int) $id]);
+        if ($st->rowCount() === 0) {
+            $st = $p->prepare('SELECT 1 FROM global_keys WHERE id = ?'); $st->execute([(int) $id]);
+            if (!$st->fetchColumn()) { $error = 'Ключ не найден.'; return false; }
+        }
+        return true;
+    } catch (Throwable $e) { $error = 'Не удалось сохранить сортировку.'; return false; }
 }
 function globalkeys_version(array $row) {
     return hash('sha256', json_encode([$row['raw'], $row['parsed'], $row['name'], $row['updated_at']], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
@@ -236,10 +265,12 @@ function globalkeys_fingerprint($p) {
     ksort($p);
     return hash('sha256', json_encode($p, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
 }
-function globalkeys_add_many(array $items, $raw_source, $source_type = 'vless', &$error = '') {
+function globalkeys_add_many(array $items, $raw_source, $source_type = 'vless', &$error = '', $position = 0) {
     globalkeys_ensure(); $error = ''; if (!$items || !($p = db())) { $error = 'Не удалось подготовить импорт.'; return false; }
+    $position = globalkeys_parse_position($position, $error);
+    if ($position === null) return false;
     try {
-        $p->beginTransaction(); $st = $p->prepare('INSERT INTO global_keys (name, enabled, source_type, raw, parsed, sort_order) VALUES (?, 1, ?, ?, ?, ?)');
+        $p->beginTransaction(); $st = $p->prepare('INSERT INTO global_keys (name, enabled, source_type, raw, parsed, sort_order, subscription_position) VALUES (?, 1, ?, ?, ?, ?, ?)');
         $order = (int) ($p->query('SELECT COALESCE(MAX(sort_order), 0) FROM global_keys')->fetchColumn() ?? 0);
         foreach ($items as $v) {
             $name = trim((string) ($v['remark'] ?? ''));
@@ -254,7 +285,7 @@ function globalkeys_add_many(array $items, $raw_source, $source_type = 'vless', 
                 $stored_type = $source_type;
             }
             $order++;
-            $st->execute([mb_substr($name, 0, 191), $stored_type, $stored_raw, json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $order]);
+            $st->execute([mb_substr($name, 0, 191), $stored_type, $stored_raw, json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES), $order, $position]);
         }
         $p->commit(); return true;
     } catch (Throwable $e) { if ($p->inTransaction()) $p->rollBack(); $error = 'Импорт не выполнен: ' . $e->getMessage(); return false; }
@@ -293,13 +324,34 @@ function globalkeys_configs_for_injection($body, $format, $include_auto = true) 
     }
     return $out;
 }
+// Positions are relative to the panel's original list. Equal positions keep
+// the order set by the arrows in the admin UI.
+function globalkeys_interleave(array $original, array $added, array $positions, array $orders = []) {
+    if (!$added) return $original;
+    $buckets = [];
+    $length = count($original);
+    foreach ($added as $i => $item) {
+        $position = (int) ($positions[$i] ?? 0);
+        $slot = $position < 0 ? max(0, $length + $position) : $length;
+        $buckets[$slot][] = ['position' => $position, 'item' => $item, 'order' => $orders[$i] ?? $i, 'index' => $i];
+    }
+    $out = [];
+    for ($i = 0; $i <= $length; $i++) {
+        if (isset($buckets[$i])) {
+            usort($buckets[$i], fn($a, $b) => ($a['position'] <=> $b['position']) ?: (($a['order'] <=> $b['order']) ?: ($a['index'] <=> $b['index'])));
+            foreach ($buckets[$i] as $entry) $out[] = $entry['item'];
+        }
+        if ($i < $length) $out[] = $original[$i];
+    }
+    return $out;
+}
 function globalkeys_inject_plain($body, array $configs) {
     if (!$configs) return $body;
     $names = [];
     foreach (preg_split('/\r\n|\r|\n/', trim((string) $body)) as $line) {
         if (stripos(trim($line), 'vless://') === 0) { $p = vless_parse(trim($line)); if (!empty($p['ok'])) $names[(string) ($p['remark'] ?? '')] = true; }
     }
-    $uris = [];
+    $uris = []; $positions = [];
     foreach ($configs as $row) {
         $p = json_decode((string) ($row['parsed'] ?? ''), true);
         if (!is_array($p) || ($p['type'] ?? '') !== 'vless') continue;
@@ -307,11 +359,12 @@ function globalkeys_inject_plain($body, array $configs) {
         while (isset($names[$name])) $name = $base . ' (' . $n++ . ')';
         $uri = vless_relabel_uri((string) $row['raw'], $name);
         if ($uri === '') continue;
-        $names[$name] = true; $uris[] = $uri;
+        $names[$name] = true; $uris[] = $uri; $positions[] = (int) ($row['subscription_position'] ?? 0);
     }
     if (!$uris) return $body;
     $separator = str_contains((string) $body, "\r\n") ? "\r\n" : "\n";
-    return rtrim((string) $body, "\r\n") . $separator . implode($separator, $uris);
+    $original = preg_split('/\r\n|\r|\n/', rtrim((string) $body, "\r\n"));
+    return implode($separator, globalkeys_interleave($original, $uris, $positions));
 }
 function globalkeys_xray_profiles() {
     $out = [];
@@ -321,7 +374,7 @@ function globalkeys_xray_profiles() {
         $profile = $p['profile'];
         $name = trim((string) ($r['name'] ?? ''));
         if ($name !== '') $profile['remarks'] = $name;
-        $out[] = $profile;
+        $out[] = ['profile' => $profile, 'subscription_position' => (int) ($r['subscription_position'] ?? 0), 'sort_order' => (int) $r['sort_order'], 'id' => (int) $r['id']];
     }
     return $out;
 }
@@ -333,7 +386,8 @@ function globalkeys_inject_xray_profiles($body, array $profiles) {
     if (!is_array($obj)) return $body;
     $seen = [];
     foreach ($obj as $profile) $seen[hash('sha256', json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))] = true;
-    foreach ($profiles as $profile) {
+    foreach ($profiles as $entry) {
+        $profile = $entry['profile'];
         $fp = hash('sha256', json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         if (isset($seen[$fp])) continue;
         $obj[] = json_decode(json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
@@ -350,17 +404,59 @@ function globalkeys_inject($body, $format, $content_type = '') {
     $use_template = $array_xray && setting('gki_xray_template', '') !== '';
     $cfg = globalkeys_configs_for_injection($body, $format, !$use_template);
     $profiles = $target === 'xray' ? globalkeys_xray_profiles() : [];
-    if ($use_template && ($generated = gki_template_profile())) $profiles[] = $generated;
+    if ($use_template && ($generated = gki_template_profile())) $profiles[] = ['profile' => $generated, 'subscription_position' => 0, 'sort_order' => PHP_INT_MAX, 'id' => PHP_INT_MAX];
     if (!$cfg && !$profiles) return $body;
     try {
-        $trim = ltrim((string) $body);
         if ($target === 'xray') {
             $obj = json_decode($body, true);
             // Global keys are independent from the optional squad xray toggle.
-            if ($cfg) $body = squadconf_inject_xray_json($body, $cfg);
-            return globalkeys_inject_xray_profiles($body, $profiles);
+            $with_cfg = $cfg ? squadconf_inject_xray_json($body, $cfg) : $body;
+            $result = globalkeys_inject_xray_profiles($with_cfg, $profiles);
+            $cfg_positions = array_map(fn($row) => (int) ($row['subscription_position'] ?? 0), $cfg);
+            if (array_is_list($obj)) {
+                $cfg_array = json_decode($with_cfg, true);
+                $final_array = json_decode($result, true);
+                if (!is_array($cfg_array) || !is_array($final_array)) return $result;
+                $original_count = count($obj);
+                $cfg_added = array_slice($cfg_array, $original_count);
+                $profile_added = array_slice($final_array, count($cfg_array));
+                if (!$cfg_added && !$profile_added) return $result;
+                $profile_positions = []; $profile_orders = [];
+                $seen = [];
+                foreach ($cfg_array as $profile) $seen[hash('sha256', json_encode($profile, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES))] = true;
+                foreach ($profiles as $entry) {
+                    $fp = hash('sha256', json_encode($entry['profile'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+                    if (isset($seen[$fp])) continue;
+                    $seen[$fp] = true; $profile_positions[] = $entry['subscription_position']; $profile_orders[] = [$entry['sort_order'], $entry['id']];
+                }
+                $cfg_orders = array_map(fn($row) => [(int) ($row['sort_order'] ?? PHP_INT_MAX), (int) ($row['id'] ?? PHP_INT_MAX)], $cfg);
+                $merged = globalkeys_interleave($obj, array_merge($cfg_added, $profile_added), array_merge(array_slice($cfg_positions, 0, count($cfg_added)), $profile_positions), array_merge(array_slice($cfg_orders, 0, count($cfg_added)), $profile_orders));
+                $encoded = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                return $encoded === false ? $result : $encoded;
+            }
+            if (is_array($obj) && isset($obj['outbounds']) && is_array($obj['outbounds'])) {
+                $final = json_decode($result, true);
+                if (!is_array($final) || !isset($final['outbounds']) || !is_array($final['outbounds'])) return $result;
+                $original_count = count($obj['outbounds']);
+                if (count($final['outbounds']) === $original_count) return $result;
+                $final['outbounds'] = globalkeys_interleave($obj['outbounds'], array_slice($final['outbounds'], $original_count), array_slice($cfg_positions, 0, count($final['outbounds']) - $original_count));
+                $encoded = json_encode($final, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                return $encoded === false ? $result : $encoded;
+            }
+            return $result;
         }
         if ($target === 'plain_uri') return globalkeys_inject_plain($body, $cfg);
-        return $cfg ? squadconf_inject_base64($body, $cfg) : $body;
+        if (!$cfg) return $body;
+        $result = squadconf_inject_base64($body, $cfg);
+        if ($result === $body) return $body;
+        $original = base64_decode(trim((string) $body), true);
+        $injected = base64_decode($result, true);
+        if (!is_string($original) || !is_string($injected)) return $result;
+        $separator = str_contains($original, "\r\n") ? "\r\n" : "\n";
+        $original_lines = preg_split('/\r\n|\r|\n/', rtrim($original, "\r\n"));
+        $injected_lines = preg_split('/\r\n|\r|\n/', rtrim($injected, "\r\n"));
+        $added = array_slice($injected_lines, count($original_lines));
+        $positions = array_map(fn($row) => (int) ($row['subscription_position'] ?? 0), $cfg);
+        return base64_encode(implode($separator, globalkeys_interleave($original_lines, $added, array_slice($positions, 0, count($added)))));
     } catch (Throwable $e) { error_log('submw globalkeys inject: ' . $e->getMessage()); return $body; }
 }

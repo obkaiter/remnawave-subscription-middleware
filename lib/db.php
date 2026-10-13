@@ -191,7 +191,7 @@ function install_statements_sqlite() {
             FOREIGN KEY (session_id) REFERENCES chat_sessions (id) ON DELETE CASCADE
         )",
         "CREATE INDEX IF NOT EXISTS idx_chat_msg_session ON chat_messages(session_id, id)",
-        "CREATE TABLE IF NOT EXISTS global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE IF NOT EXISTS global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, subscription_position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
         "CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order)",
         seed_sql('sqlite'),
     ];
@@ -257,6 +257,7 @@ function install_statements_mysql() {
             id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT, name VARCHAR(191) NULL,
             enabled TINYINT(1) NOT NULL DEFAULT 1, source_type VARCHAR(32) NOT NULL DEFAULT 'vless',
             raw MEDIUMTEXT NOT NULL, parsed MEDIUMTEXT NOT NULL, sort_order INT NOT NULL DEFAULT 0,
+            subscription_position INT NOT NULL DEFAULT 0,
             created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             PRIMARY KEY (id), KEY idx_gk_enabled (enabled, sort_order)
@@ -442,6 +443,7 @@ function migrate_extra_ddl($drv) {
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT, name VARCHAR(191) NULL,
                 enabled TINYINT(1) NOT NULL DEFAULT 1, source_type VARCHAR(32) NOT NULL DEFAULT 'vless',
                 raw MEDIUMTEXT NOT NULL, parsed MEDIUMTEXT NOT NULL, sort_order INT NOT NULL DEFAULT 0,
+                subscription_position INT NOT NULL DEFAULT 0,
                 created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 PRIMARY KEY (id), KEY idx_gk_enabled (enabled, sort_order)
@@ -508,7 +510,7 @@ function migrate_extra_ddl($drv) {
         "CREATE INDEX IF NOT EXISTS idx_wguc_ts ON wg_user_cache(ts)",
         "CREATE TABLE IF NOT EXISTS addsub_map (main_short TEXT NOT NULL PRIMARY KEY, add_url TEXT NOT NULL, note TEXT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
         "CREATE TABLE IF NOT EXISTS addsub_cache (main_short TEXT NOT NULL PRIMARY KEY, add_url TEXT NULL, ts INTEGER NOT NULL DEFAULT 0)",
-        "CREATE TABLE IF NOT EXISTS global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE IF NOT EXISTS global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, subscription_position INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
         "CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order)",
         "CREATE TABLE IF NOT EXISTS login_attempts (id INTEGER PRIMARY KEY AUTOINCREMENT, ip TEXT NOT NULL, ts TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)",
         "CREATE INDEX IF NOT EXISTS idx_la_ip ON login_attempts(ip)",

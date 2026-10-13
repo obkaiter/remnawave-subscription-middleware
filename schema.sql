@@ -240,7 +240,8 @@ CREATE INDEX IF NOT EXISTS idx_chan_debug_ts ON chan_debug(ts);
 CREATE TABLE IF NOT EXISTS global_keys (
     id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1,
     source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    sort_order INTEGER NOT NULL DEFAULT 0, subscription_position INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_gk_enabled ON global_keys(enabled, sort_order);

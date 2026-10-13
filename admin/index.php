@@ -1342,7 +1342,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && is_auth()) {
         $items = globalkeys_parse_input($raw, $err);
         $first = ltrim($raw)[0] ?? '';
         if ($err !== '') flash($err);
-        elseif (!globalkeys_add_many($items, $raw, in_array($first, ['{', '['], true) ? 'xray_json' : 'vless', $err)) flash($err);
+        elseif (!globalkeys_add_many($items, $raw, in_array($first, ['{', '['], true) ? 'xray_json' : 'vless', $err, $_POST['subscription_position'] ?? '0')) flash($err);
         else flash('Добавлено глобальных ключей: ' . count($items));
         header('Location: index.php?tab=globalkeys'); exit();
     }
@@ -1355,6 +1355,11 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && is_auth()) {
     }
     if ($action === 'toggle_globalkey') { globalkeys_toggle((int) ($_POST['id'] ?? 0), ($_POST['enabled'] ?? '0') === '1'); header('Location: index.php?tab=globalkeys'); exit(); }
     if ($action === 'move_globalkey') { globalkeys_move((int) ($_POST['id'] ?? 0), ($_POST['direction'] ?? 'up') === 'up' ? -1 : 1); header('Location: index.php?tab=globalkeys'); exit(); }
+    if ($action === 'position_globalkey') {
+        $err = '';
+        flash(globalkeys_set_position((int) ($_POST['id'] ?? 0), $_POST['subscription_position'] ?? '', $err) ? 'Сортировка сохранена' : $err);
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
     if ($action === 'delete_globalkey') { globalkeys_delete((int) ($_POST['id'] ?? 0)); flash('Глобальный ключ удалён'); header('Location: index.php?tab=globalkeys'); exit(); }
     if ($action === 'rename_globalkey') { globalkeys_update_name((int) ($_POST['id'] ?? 0), $_POST['name'] ?? ''); flash('Название ключа обновлено'); header('Location: index.php?tab=globalkeys'); exit(); }
 }

@@ -4,6 +4,7 @@
 <div class="card">
     <h2 style="margin-top:0">Глобальные ключи</h2>
     <p class="muted"><strong>Mihomo/Clash-подписки не изменяются разделом «Ключи».</strong> Ручные и импортируемые ключи применяются только к поддерживаемым Xray JSON и URI-подпискам для пользователей с доступом.</p>
+    <p class="muted">Сортировка задаёт место ключа относительно конца исходной подписки: 0 — в конце, −1 — перед последним, −2 — перед предпоследним. Положительные числа идут в конце по возрастанию. При одинаковом числе действует порядок стрелок.</p>
     <form method="post" data-autosave>
         <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="save_globalkeys">
         <div class="set-row"><div class="set-info"><div class="set-t">Добавлять глобальные ключи в поддерживаемые подписки</div><div class="set-d">Главный переключатель: при выключении сохранённые ключи остаются в базе, но не выдаются.</div></div><label class="switch"><input type="checkbox" name="globalkeys_enabled" <?= globalkeys_enabled() ? 'checked' : '' ?>><span class="sl"></span></label></div>
@@ -15,6 +16,7 @@
         <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="add_globalkeys">
         <label for="gk_raw">VLESS URL или Xray JSON</label>
         <textarea id="gk_raw" name="raw" rows="10" spellcheck="false" placeholder="vless://…&#10;vless://…&#10;&#10;или { &quot;outbounds&quot;: […] }" style="width:100%;box-sizing:border-box;font-family:monospace"></textarea>
+        <label>Сортировка <input type="number" name="subscription_position" step="1" value="0" required></label>
         <p class="muted">Несколько VLESS URL — по одному на строку. Полный Xray JSON сохраняется одним цельным профилем для Xray-подписок; одиночный outbound импортируется как VLESS. Импорт атомарный.</p>
         <button class="btn" type="submit">Добавить</button>
     </form>
@@ -29,6 +31,7 @@
         <div class="gk-actions">
             <form method="post"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="toggle_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><input type="hidden" name="enabled" value="<?= (int) $gk['enabled'] === 1 ? '0' : '1' ?>"><button class="btn ghost" type="submit"><?= (int) $gk['enabled'] === 1 ? 'Выключить' : 'Включить' ?></button></form>
             <form method="post"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="move_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><button class="btn ghost" name="direction" value="up" type="submit">↑</button><button class="btn ghost" name="direction" value="down" type="submit">↓</button></form>
+            <form method="post"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="position_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><label>Сортировка <input type="number" name="subscription_position" step="1" value="<?= (int) ($gk['subscription_position'] ?? 0) ?>" required></label><button class="btn ghost" type="submit">Сохранить</button></form>
             <form method="post"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="rename_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><input name="name" value="<?= h($gk['name']) ?>" maxlength="191"><button class="btn ghost" type="submit">Изменить</button></form>
             <form method="post" onsubmit="return confirm('Удалить ключ?')"><input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="delete_globalkey"><input type="hidden" name="id" value="<?= (int) $gk['id'] ?>"><button class="btn danger" type="submit">Удалить</button></form>
         </div>
