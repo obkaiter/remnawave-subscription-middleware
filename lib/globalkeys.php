@@ -370,10 +370,13 @@ function globalkeys_xray_profiles() {
     $out = [];
     foreach (globalkeys_all(true) as $r) {
         $p = json_decode((string) ($r['parsed'] ?? ''), true);
-        if (!is_array($p) || ($p['type'] ?? '') !== 'xray_profile' || !is_array($p['profile'] ?? null)) continue;
-        $profile = $p['profile'];
+        if (!is_array($p) || ($p['type'] ?? '') !== 'xray_profile') continue;
+        // Decode the original source as objects: associative decoding turns
+        // empty Xray objects such as tcpSettings {} into invalid arrays [].
+        $profile = json_decode((string) ($r['raw'] ?? ''));
+        if (!is_object($profile) || !isset($profile->outbounds) || !is_array($profile->outbounds)) continue;
         $name = trim((string) ($r['name'] ?? ''));
-        if ($name !== '') $profile['remarks'] = $name;
+        if ($name !== '') $profile->remarks = $name;
         $out[] = ['profile' => $profile, 'subscription_position' => (int) ($r['subscription_position'] ?? 0), 'sort_order' => (int) $r['sort_order'], 'id' => (int) $r['id']];
     }
     return $out;
@@ -408,14 +411,14 @@ function globalkeys_inject($body, $format, $content_type = '') {
     if (!$cfg && !$profiles) return $body;
     try {
         if ($target === 'xray') {
-            $obj = json_decode($body, true);
+            $obj = json_decode($body);
             // Global keys are independent from the optional squad xray toggle.
             $with_cfg = $cfg ? squadconf_inject_xray_json($body, $cfg) : $body;
             $result = globalkeys_inject_xray_profiles($with_cfg, $profiles);
             $cfg_positions = array_map(fn($row) => (int) ($row['subscription_position'] ?? 0), $cfg);
-            if (array_is_list($obj)) {
-                $cfg_array = json_decode($with_cfg, true);
-                $final_array = json_decode($result, true);
+            if (is_array($obj)) {
+                $cfg_array = json_decode($with_cfg);
+                $final_array = json_decode($result);
                 if (!is_array($cfg_array) || !is_array($final_array)) return $result;
                 $original_count = count($obj);
                 $cfg_added = array_slice($cfg_array, $original_count);
@@ -434,12 +437,12 @@ function globalkeys_inject($body, $format, $content_type = '') {
                 $encoded = json_encode($merged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 return $encoded === false ? $result : $encoded;
             }
-            if (is_array($obj) && isset($obj['outbounds']) && is_array($obj['outbounds'])) {
-                $final = json_decode($result, true);
-                if (!is_array($final) || !isset($final['outbounds']) || !is_array($final['outbounds'])) return $result;
-                $original_count = count($obj['outbounds']);
-                if (count($final['outbounds']) === $original_count) return $result;
-                $final['outbounds'] = globalkeys_interleave($obj['outbounds'], array_slice($final['outbounds'], $original_count), array_slice($cfg_positions, 0, count($final['outbounds']) - $original_count));
+            if (is_object($obj) && isset($obj->outbounds) && is_array($obj->outbounds)) {
+                $final = json_decode($result);
+                if (!is_object($final) || !isset($final->outbounds) || !is_array($final->outbounds)) return $result;
+                $original_count = count($obj->outbounds);
+                if (count($final->outbounds) === $original_count) return $result;
+                $final->outbounds = globalkeys_interleave($obj->outbounds, array_slice($final->outbounds, $original_count), array_slice($cfg_positions, 0, count($final->outbounds) - $original_count));
                 $encoded = json_encode($final, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
                 return $encoded === false ? $result : $encoded;
             }

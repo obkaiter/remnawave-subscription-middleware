@@ -227,7 +227,9 @@ function gki_template_validate($raw, &$error = '') {
 }
 function gki_template_profile($rows = null) {
     $raw = setting('gki_xray_template', ''); if ($raw === '') return null;
-    $error = ''; $profile = gki_template_validate($raw, $error); if (!$profile) return null;
+    $error = ''; if (!gki_template_validate($raw, $error)) return null;
+    $profile = json_decode($raw);
+    if (!is_object($profile) || !isset($profile->outbounds) || !is_array($profile->outbounds)) return null;
     if ($rows === null) $rows = gki_published_rows();
     if (!$rows) return null;
     $dynamic = [];
@@ -236,15 +238,15 @@ function gki_template_profile($rows = null) {
         if (!is_array($p) || ($p['type'] ?? '') !== 'vless') continue;
         $tag = 'globalkey-' . substr(globalkeys_fingerprint($p), 0, 16);
         $outbound = vless_to_xray($p, $tag);
-        if ($outbound) $dynamic[] = $outbound;
+        if ($outbound) $dynamic[] = json_decode(json_encode($outbound, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
     }
     if (!$dynamic) return null;
     $out = [];
-    foreach ($profile['outbounds'] as $item) {
-        if (($item['tag'] ?? '') === 'globalkeys_insert') array_push($out, ...$dynamic);
+    foreach ($profile->outbounds as $item) {
+        if (($item->tag ?? '') === 'globalkeys_insert') array_push($out, ...$dynamic);
         else $out[] = $item;
     }
-    $profile['outbounds'] = $out;
+    $profile->outbounds = $out;
     return $profile;
 }
 
