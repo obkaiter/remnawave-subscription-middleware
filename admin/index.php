@@ -1290,6 +1290,30 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST' && is_auth()) {
         flash('Настройки глобальных ключей сохранены');
         form_saved('globalkeys');
     }
+    if ($action === 'save_globalkeys_squads') {
+        $mode = (string) ($_POST['squad_mode'] ?? '');
+        if ($mode === 'all') {
+            set_setting('globalkeys_squad_uuids', 'all');
+            flash('Ключи доступны всем активным пользователям');
+        } elseif ($mode === 'selected') {
+            $error = '';
+            $available = remnawave_internal_squads($error);
+            $valid = array_fill_keys(array_column($available, 'uuid'), true);
+            $posted = is_array($_POST['squads'] ?? null) ? $_POST['squads'] : [];
+            $chosen = [];
+            foreach ($posted as $uuid) {
+                if (!is_string($uuid) || !isset($valid[$uuid])) { $error = 'Выбраны неизвестные внутренние сквады.'; break; }
+                $chosen[$uuid] = true;
+            }
+            if ($error !== '') flash('Не удалось сохранить сквады: ' . $error);
+            elseif (!$chosen) flash('Выберите хотя бы один внутренний сквад.');
+            else {
+                set_setting('globalkeys_squad_uuids', json_encode(array_keys($chosen), JSON_UNESCAPED_SLASHES));
+                flash('Сквады для ключей сохранены');
+            }
+        } else flash('Некорректный режим выбора сквадов.');
+        header('Location: index.php?tab=globalkeys'); exit();
+    }
     if ($action === 'gki_settings') {
         set_setting('gki_enabled', isset($_POST['enabled']) ? '1' : '0');
         set_setting('gki_publish', isset($_POST['publish']) ? '1' : '0');
@@ -1611,6 +1635,9 @@ if ($tab === 'wg_pool') {
 $addsub_list = [];
 if ($tab === 'addsub') $addsub_list = addsub_map_all();
 $globalkeys_list = $tab === 'globalkeys' ? globalkeys_all() : [];
+$gk_squads = []; $gk_squads_err = '';
+if ($tab === 'globalkeys' && remnawave_url() !== '' && remnawave_token() !== '') $gk_squads = remnawave_internal_squads($gk_squads_err);
+$gk_selected_squads = $tab === 'globalkeys' ? globalkeys_selected_squads() : null;
 $gki_sources = $tab === 'globalkeys' ? gki_rows('globalkey_import_sources') : [];
 $gki_page = max(1, (int) ($_GET['gki_page'] ?? 1));
 $gki_run_page = max(1, (int) ($_GET['gki_run_page'] ?? 1));

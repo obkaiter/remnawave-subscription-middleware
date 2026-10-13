@@ -480,7 +480,7 @@ if ($decision === 'normal' && $short_uuid !== '' && !$junk_path && addsub_enable
 $log_global = 0;
 if ($decision === 'normal' && $short_uuid !== '' && !$junk_path && !globalkeys_user_is_grace($short_uuid)
     && !$panel_hwid_block && (squadconf_user_state($gate_short)['status'] ?? '') === 'ACTIVE'
-    && globalkeys_enabled() && !$is_page && $response !== ''
+    && globalkeys_enabled() && globalkeys_user_in_selected_squad($gate_short) && !$is_page && $response !== ''
     && globalkeys_response_type($response, $format, $grabbed_headers['content-type'] ?? '') !== '') {
     $before_global = $response;
     $response = globalkeys_inject($response, $format, $grabbed_headers['content-type'] ?? '');

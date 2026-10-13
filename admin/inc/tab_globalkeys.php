@@ -1,5 +1,5 @@
 <style>
-.gk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.8rem}.gk-card{border:1px solid var(--line);border-radius:10px;padding:1rem;background:var(--bg2)}.gk-head{display:flex;align-items:center;justify-content:space-between;gap:.7rem}.gk-meta{color:var(--muted);font-size:.82rem;line-height:1.5;margin:.45rem 0}.gk-actions{display:flex;gap:.45rem;flex-wrap:wrap}.gk-actions form{display:flex;gap:.35rem}.gk-actions input{max-width:180px}.gk-editor{margin-top:.8rem}.gk-editor textarea{width:100%;box-sizing:border-box;font-family:monospace;min-height:12rem}.gk-editor input{width:100%;box-sizing:border-box}.gk-editor .gk-status{min-height:1.4rem}
+.gk-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:.8rem}.gk-card{border:1px solid var(--line);border-radius:10px;padding:1rem;background:var(--bg2)}.gk-head{display:flex;align-items:center;justify-content:space-between;gap:.7rem}.gk-meta{color:var(--muted);font-size:.82rem;line-height:1.5;margin:.45rem 0}.gk-actions{display:flex;gap:.45rem;flex-wrap:wrap}.gk-actions form{display:flex;gap:.35rem}.gk-actions input{max-width:180px}.gk-editor{margin-top:.8rem}.gk-editor textarea{width:100%;box-sizing:border-box;font-family:monospace;min-height:12rem}.gk-editor input{width:100%;box-sizing:border-box}.gk-editor .gk-status{min-height:1.4rem}.gk-squad-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:.5rem;margin:.7rem 0}.gk-squad-grid label{display:flex;align-items:center;gap:.5rem;border:1px solid var(--line);border-radius:8px;padding:.55rem .7rem;background:var(--bg2)}
 </style>
 <div class="card">
     <h2 style="margin-top:0">Глобальные ключи</h2>
@@ -10,6 +10,23 @@
         <div class="set-row"><div class="set-info"><div class="set-t">Добавлять глобальные ключи в поддерживаемые подписки</div><div class="set-d">Главный переключатель: при выключении сохранённые ключи остаются в базе, но не выдаются.</div></div><label class="switch"><input type="checkbox" name="globalkeys_enabled" <?= globalkeys_enabled() ? 'checked' : '' ?>><span class="sl"></span></label></div>
     </form>
 </div>
+<div class="card">
+    <h3 style="margin-top:0">Внутренние сквады для ключей</h3>
+    <p class="muted">Выбор действует для всех ручных и автоматически импортированных ключей. Пользователь получит ключи, если состоит хотя бы в одном выбранном скваде. Ранее сохранённые настройки по умолчанию оставляют выдачу всем.</p>
+    <form method="post" id="gk-squad-form">
+        <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="save_globalkeys_squads">
+        <label><input type="radio" name="squad_mode" value="all" <?= $gk_selected_squads === null ? 'checked' : '' ?>> Все активные пользователи (без ограничения по сквадам)</label>
+        <label><input type="radio" name="squad_mode" value="selected" <?= $gk_selected_squads !== null ? 'checked' : '' ?>> Только выбранные</label>
+        <?php if ($gk_squads_err !== ''): ?><p class="muted">Список сквадов недоступен: <?= h($gk_squads_err) ?></p>
+        <?php elseif (!$gk_squads): ?><p class="muted">Внутренние сквады не получены. Проверьте подключение к панели.</p><?php endif; ?>
+        <?php if ($gk_squads): ?><div class="gk-squad-grid">
+            <?php foreach ($gk_squads as $s): ?><label><input type="checkbox" name="squads[]" value="<?= h($s['uuid']) ?>" <?= $gk_selected_squads !== null && in_array($s['uuid'], $gk_selected_squads, true) ? 'checked' : '' ?>><span><?= h($s['name']) ?> <small class="muted">· <?= (int) $s['members'] ?></small></span></label><?php endforeach; ?>
+        </div><?php endif; ?>
+        <?php if ($gk_selected_squads !== null): foreach (array_diff($gk_selected_squads, array_column($gk_squads, 'uuid')) as $missing): ?><p class="muted">Сохранённый сквад не найден в панели: <?= h($missing) ?></p><?php endforeach; endif; ?>
+        <button class="btn" type="submit">Сохранить сквады</button>
+    </form>
+</div>
+<script>document.querySelectorAll('#gk-squad-form input[name="squads[]"]').forEach(input=>input.addEventListener('change',()=>{document.querySelector('#gk-squad-form input[value="selected"]').checked=true;}));</script>
 <div class="card">
     <h3 style="margin-top:0">+ Добавить</h3>
     <form method="post" autocomplete="off">

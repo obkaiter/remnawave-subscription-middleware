@@ -37,6 +37,21 @@ function globalkeys_ensure() {
 }
 
 function globalkeys_enabled() { return setting('globalkeys_enabled', '0') === '1'; }
+// null means unrestricted (the historical default); an empty list fails closed.
+function globalkeys_selected_squads() {
+    $raw = setting('globalkeys_squad_uuids', 'all');
+    if ($raw === 'all') return null;
+    $decoded = json_decode((string) $raw, true);
+    if (!is_array($decoded) || !array_is_list($decoded)) return [];
+    return array_values(array_unique(array_filter($decoded, fn($uuid) => is_string($uuid) && $uuid !== '')));
+}
+function globalkeys_user_in_selected_squad($short, ?array $user_squads = null) {
+    $selected = globalkeys_selected_squads();
+    if ($selected === null) return true;
+    if (!$selected) return false;
+    if ($user_squads === null) $user_squads = squadconf_user_squads($short);
+    return (bool) array_intersect($selected, $user_squads);
+}
 function globalkeys_is_xray_profile($obj) {
     if (!is_array($obj) || array_is_list($obj) || !isset($obj['outbounds']) || !is_array($obj['outbounds']) || squadconf_is_singbox($obj)) return false;
     foreach (['routing', 'policy', 'stats', 'observatory', 'burstObservatory'] as $key) if (isset($obj[$key])) return true;

@@ -14,6 +14,16 @@ require dirname(__DIR__) . '/lib/globalkey_import.php';
 $GLOBALS['pdo'] = new PDO('sqlite::memory:', null, null, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
 $GLOBALS['pdo']->exec("CREATE TABLE global_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_type TEXT NOT NULL DEFAULT 'vless', raw TEXT NOT NULL, parsed TEXT NOT NULL, sort_order INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)");
 $GLOBALS['settings'] = ['globalkeys_enabled' => '1', 'gki_enabled' => '1', 'gki_publish' => '1'];
+check(globalkeys_user_in_selected_squad('user', []) === true, 'existing installations remain unrestricted');
+set_setting('globalkeys_squad_uuids', json_encode(['squad-a', 'squad-b']));
+check(globalkeys_user_in_selected_squad('user', ['squad-b']) === true, 'selected squad grants access');
+check(globalkeys_user_in_selected_squad('user', ['squad-c']) === false, 'other squad denied');
+check(globalkeys_user_in_selected_squad('user', []) === false, 'unknown squad denied');
+set_setting('globalkeys_squad_uuids', '[]');
+check(globalkeys_user_in_selected_squad('user', ['squad-a']) === false, 'empty selection fails closed');
+set_setting('globalkeys_squad_uuids', 'broken');
+check(globalkeys_user_in_selected_squad('user', ['squad-a']) === false, 'invalid setting fails closed');
+set_setting('globalkeys_squad_uuids', 'all');
 $golden = file_get_contents(__DIR__ . '/fixtures/mihomo.yaml');
 $uri = 'vless://123e4567-e89b-12d3-a456-426614174001@one.example.org:443?security=tls&type=ws&path=%2Fabc#One';
 
