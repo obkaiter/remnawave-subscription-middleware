@@ -136,6 +136,32 @@ check(is_object(globalkeys_xray_profiles()[0]['profile']->outbounds[0]->streamSe
 $full_response = json_decode(globalkeys_inject($array_body, 'base64', 'application/json'));
 $full_entries = array_values(array_filter($full_response, fn($item) => ($item->remarks ?? '') === 'Full'));
 check(count($full_entries) === 1 && is_object($full_entries[0]->outbounds[0]->streamSettings->tcpSettings), 'injected full profile preserves empty object');
+$wireguard_profile = [
+    'remarks' => 'WireGuard profile',
+    'outbounds' => [
+        ['protocol' => 'wireguard', 'tag' => 'warp', 'settings' => [
+            'address' => ['172.16.0.2/32'], 'secretKey' => 'test-secret',
+            'peers' => [['publicKey' => 'test-public', 'endpoint' => '203.0.113.1:500']],
+        ], 'streamSettings' => ['sockopt' => ['dialerProxy' => 'noise-out']]],
+        ['protocol' => 'freedom', 'tag' => 'noise-out', 'settings' => ['noises' => [['type' => 'rand', 'packet' => '23-911']]]],
+    ],
+    'routing' => ['rules' => [['type' => 'field', 'outboundTag' => 'warp']]],
+];
+$wireguard_raw = json_encode($wireguard_profile);
+$wireguard_items = globalkeys_parse_input($wireguard_raw, $err);
+check(count($wireguard_items) === 1 && $err === '' && $wireguard_items[0]['wireguard_count'] === 1 && $wireguard_items[0]['vless_count'] === 0, 'WireGuard profile accepted without VLESS');
+check(str_contains(globalkeys_summary($wireguard_items[0]), '1 WireGuard'), 'WireGuard profile summary');
+check(globalkeys_add_many($wireguard_items, $wireguard_raw, 'xray_json', $err), 'WireGuard profile saved: ' . $err);
+$wireguard_rows = globalkeys_all();
+$wireguard_row = end($wireguard_rows);
+check($wireguard_row['raw'] === $wireguard_raw, 'WireGuard profile raw preserved');
+$wireguard_entries = json_decode(globalkeys_inject($array_body, 'base64', 'application/json'), true);
+$wireguard_entries = array_values(array_filter($wireguard_entries, fn($item) => ($item['remarks'] ?? '') === 'WireGuard profile'));
+check(count($wireguard_entries) === 1 && $wireguard_entries[0] === $wireguard_profile, 'WireGuard profile injected intact');
+globalkeys_delete((int) $wireguard_row['id']);
+$invalid_wireguard = $wireguard_profile;
+unset($invalid_wireguard['outbounds'][0]['settings']['secretKey']);
+check(globalkeys_parse_input(json_encode($invalid_wireguard), $err) === [] && $err !== '', 'incomplete WireGuard profile rejected');
 $p_row = globalkeys_all()[0];
 $edited = str_replace('"subjectSelector":["a"]', '"subjectSelector":["a","b"]', $profile);
 check(globalkeys_update((int) $p_row['id'], 'Full edited', $edited, globalkeys_version($p_row), $err), 'full profile edit');

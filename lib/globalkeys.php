@@ -182,7 +182,10 @@ function globalkeys_update($id, $name, $raw, $version, &$error = '') {
 
 function globalkeys_summary($parsed) {
     if (is_array($parsed) && ($parsed['type'] ?? '') === 'xray_profile') {
-        return 'Xray profile · ' . (int) ($parsed['vless_count'] ?? 0) . ' VLESS · один хост';
+        $counts = [];
+        if (!empty($parsed['vless_count'])) $counts[] = (int) $parsed['vless_count'] . ' VLESS';
+        if (!empty($parsed['wireguard_count'])) $counts[] = (int) $parsed['wireguard_count'] . ' WireGuard';
+        return 'Xray profile · ' . implode(', ', $counts) . ' · один хост';
     }
     return squadconf_summary($parsed);
 }
@@ -227,20 +230,35 @@ function globalkeys_from_xray_outbound(array $o) {
     return $p['ok'] ? $p : null;
 }
 
+function globalkeys_valid_wireguard_outbound(array $o) {
+    if (($o['protocol'] ?? '') !== 'wireguard') return false;
+    $settings = $o['settings'] ?? null;
+    if (!is_array($settings) || !is_string($settings['secretKey'] ?? null) || $settings['secretKey'] === '' ||
+        !is_array($settings['address'] ?? null) || !$settings['address'] || !is_array($settings['peers'] ?? null) || !$settings['peers']) return false;
+    foreach ($settings['peers'] as $peer) {
+        if (!is_array($peer) || !is_string($peer['publicKey'] ?? null) || $peer['publicKey'] === '' ||
+            !is_string($peer['endpoint'] ?? null) || $peer['endpoint'] === '') return false;
+    }
+    return true;
+}
+
 function globalkeys_xray_profile(array $profile) {
     if (!isset($profile['outbounds']) || !is_array($profile['outbounds'])) return null;
-    $count = 0;
+    $vless_count = 0; $wireguard_count = 0;
     foreach ($profile['outbounds'] as $o) {
-        if (is_array($o) && globalkeys_from_xray_outbound($o)) $count++;
+        if (!is_array($o)) continue;
+        if (globalkeys_from_xray_outbound($o)) $vless_count++;
+        elseif (globalkeys_valid_wireguard_outbound($o)) $wireguard_count++;
     }
-    if ($count === 0) return null;
+    if ($vless_count + $wireguard_count === 0) return null;
     $name = trim((string) ($profile['remarks'] ?? ''));
     return [
         'ok' => true,
         'type' => 'xray_profile',
         'remark' => $name !== '' ? $name : 'Xray profile',
         'profile' => $profile,
-        'vless_count' => $count,
+        'vless_count' => $vless_count,
+        'wireguard_count' => $wireguard_count,
         'clients' => ['Xray JSON'],
         'warnings' => [],
         'notes' => ['Профиль сохраняется целиком: routing, balancers, observatory и outbounds не разбираются на отдельные ключи.'],
@@ -256,7 +274,7 @@ function globalkeys_parse_input($raw, &$error = '') {
         // depend on all embedded outbounds, so splitting it changes its meaning.
         if (!array_is_list($j) && isset($j['outbounds'])) {
             $profile = globalkeys_xray_profile($j);
-            if (!$profile) { $error = 'В JSON не найдено ни одного VLESS outbound.'; return []; }
+            if (!$profile) { $error = 'В JSON не найдено ни одного поддерживаемого outbound (VLESS или WireGuard).'; return []; }
             return [$profile];
         }
         $obs = array_is_list($j) ? $j : [$j];

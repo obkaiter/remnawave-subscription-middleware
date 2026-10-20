@@ -34,7 +34,7 @@
         <label for="gk_raw">VLESS URL или Xray JSON</label>
         <textarea id="gk_raw" name="raw" rows="10" spellcheck="false" placeholder="vless://…&#10;vless://…&#10;&#10;или { &quot;outbounds&quot;: […] }" style="width:100%;box-sizing:border-box;font-family:monospace"></textarea>
         <label>Сортировка <input type="number" name="subscription_position" step="1" value="0" required></label>
-        <p class="muted">Несколько VLESS URL — по одному на строку. Полный Xray JSON сохраняется одним цельным профилем для Xray-подписок; одиночный outbound импортируется как VLESS. Импорт атомарный.</p>
+        <p class="muted">Несколько VLESS URL — по одному на строку. Полный Xray JSON с VLESS или WireGuard outbound сохраняется одним цельным профилем для Xray-подписок; одиночный outbound импортируется как VLESS. Импорт атомарный.</p>
         <button class="btn" type="submit">Добавить</button>
     </form>
 </div>
