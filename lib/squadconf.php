@@ -340,6 +340,7 @@ function squadconf_cache_ensure() {
                 su VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
                 squads TEXT NULL,
                 st VARCHAR(32) NULL,
+                external_squad VARCHAR(191) NULL,
                 ts INT UNSIGNED NOT NULL DEFAULT 0,
                 PRIMARY KEY (su)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
@@ -348,12 +349,18 @@ function squadconf_cache_ensure() {
                 su TEXT NOT NULL PRIMARY KEY,
                 squads TEXT NULL,
                 st TEXT NULL,
+                external_squad TEXT NULL,
                 ts INTEGER NOT NULL DEFAULT 0
             )");
         }
         if (setting('sqcache_st_col', '') !== '1') {
             try { $p->exec('ALTER TABLE squad_cache ADD COLUMN st ' . (db_driver() === 'mysql' ? 'VARCHAR(32)' : 'TEXT') . ' NULL'); } catch (Throwable $e) {}
             set_setting('sqcache_st_col', '1');
+        }
+        if (setting('sqcache_external_col', '') !== '1') {
+            try { $p->query('SELECT external_squad FROM squad_cache LIMIT 0'); }
+            catch (Throwable $e) { $p->exec('ALTER TABLE squad_cache ADD COLUMN external_squad ' . (db_driver() === 'mysql' ? 'VARCHAR(191)' : 'TEXT') . ' NULL'); }
+            set_setting('sqcache_external_col', '1');
         }
     } catch (Throwable $e) { error_log('submw squad_cache ensure: ' . $e->getMessage()); }
 }
@@ -369,38 +376,39 @@ function squadconf_cache_drop($short) {
 function squadconf_user_state($short) {
     static $memo = [];
     $short = trim((string) $short);
-    if ($short === '') return ['squads' => [], 'status' => ''];
+    if ($short === '') return ['squads' => [], 'status' => '', 'external_squad' => ''];
     if (isset($memo[$short])) return $memo[$short];
-    $none = ['squads' => [], 'status' => ''];
+    $none = ['squads' => [], 'status' => '', 'external_squad' => ''];
     if (remnawave_url() === '' || remnawave_token() === '') return $none;
     squadconf_cache_ensure();
     if (!($p = db())) return $none;
     $now = time();
     $row = null;
     try {
-        $st = $p->prepare('SELECT squads, st, ts FROM squad_cache WHERE su = ?');
+        $st = $p->prepare('SELECT squads, st, external_squad, ts FROM squad_cache WHERE su = ?');
         $st->execute([$short]);
         $row = $st->fetch();
     } catch (Throwable $e) {}
     $from_row = function ($r) {
         $a = json_decode((string) ($r['squads'] ?? ''), true);
-        return ['squads' => is_array($a) ? $a : [], 'status' => strtoupper(trim((string) ($r['st'] ?? '')))];
+        return ['squads' => is_array($a) ? $a : [], 'status' => strtoupper(trim((string) ($r['st'] ?? ''))), 'external_squad' => (string) ($r['external_squad'] ?? '')];
     };
-    if ($row && ($now - (int) $row['ts'] < 300)) return $memo[$short] = $from_row($row);
+    if ($row && $row['external_squad'] !== null && ($now - (int) $row['ts'] < 300)) return $memo[$short] = $from_row($row);
     $e = '';
     $u = remnawave_get_user_by_short($short, $e);
     if (!is_array($u)) return $memo[$short] = ($row ? $from_row($row) : $none);
     $squads = function_exists('grace_squads_from_user') ? grace_squads_from_user($u) : [];
     $status = strtoupper(trim((string) ($u['status'] ?? '')));
+    $external_squad = trim((string) ($u['externalSquadUuid'] ?? ''));
     try {
         if (db_driver() === 'mysql') {
-            $st = $p->prepare('INSERT INTO squad_cache (su, squads, st, ts) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE squads = VALUES(squads), st = VALUES(st), ts = VALUES(ts)');
+            $st = $p->prepare('INSERT INTO squad_cache (su, squads, st, external_squad, ts) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE squads = VALUES(squads), st = VALUES(st), external_squad = VALUES(external_squad), ts = VALUES(ts)');
         } else {
-            $st = $p->prepare('INSERT INTO squad_cache (su, squads, st, ts) VALUES (?, ?, ?, ?) ON CONFLICT(su) DO UPDATE SET squads = excluded.squads, st = excluded.st, ts = excluded.ts');
+            $st = $p->prepare('INSERT INTO squad_cache (su, squads, st, external_squad, ts) VALUES (?, ?, ?, ?, ?) ON CONFLICT(su) DO UPDATE SET squads = excluded.squads, st = excluded.st, external_squad = excluded.external_squad, ts = excluded.ts');
         }
-        $st->execute([$short, json_encode(array_values($squads)), $status, $now]);
+        $st->execute([$short, json_encode(array_values($squads)), $status, $external_squad, $now]);
     } catch (Throwable $e2) {}
-    return $memo[$short] = ['squads' => $squads, 'status' => $status];
+    return $memo[$short] = ['squads' => $squads, 'status' => $status, 'external_squad' => $external_squad];
 }
 
 function squadconf_user_squads($short) {

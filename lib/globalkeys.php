@@ -37,20 +37,30 @@ function globalkeys_ensure() {
 }
 
 function globalkeys_enabled() { return setting('globalkeys_enabled', '0') === '1'; }
-// null means unrestricted (the historical default); an empty list fails closed.
-function globalkeys_selected_squads() {
-    $raw = setting('globalkeys_squad_uuids', 'all');
+// null means this squad type is unrestricted; an empty list fails closed.
+function globalkeys_parse_selected_squads($raw) {
     if ($raw === 'all') return null;
     $decoded = json_decode((string) $raw, true);
     if (!is_array($decoded) || !array_is_list($decoded)) return [];
     return array_values(array_unique(array_filter($decoded, fn($uuid) => is_string($uuid) && $uuid !== '')));
 }
-function globalkeys_user_in_selected_squad($short, ?array $user_squads = null) {
-    $selected = globalkeys_selected_squads();
-    if ($selected === null) return true;
-    if (!$selected) return false;
-    if ($user_squads === null) $user_squads = squadconf_user_squads($short);
-    return (bool) array_intersect($selected, $user_squads);
+function globalkeys_selected_squads() {
+    return globalkeys_parse_selected_squads(setting('globalkeys_squad_uuids', 'all'));
+}
+function globalkeys_selected_external_squads() {
+    return globalkeys_parse_selected_squads(setting('globalkeys_external_squad_uuids', 'all'));
+}
+function globalkeys_user_in_selected_squad($short, ?array $user_squads = null, ?string $external_squad = null) {
+    $internal = globalkeys_selected_squads();
+    $external = globalkeys_selected_external_squads();
+    if ($internal === null && $external === null) return true;
+    if (($internal !== null && $user_squads === null) || ($external !== null && $external_squad === null)) {
+        $state = squadconf_user_state($short);
+        if ($user_squads === null) $user_squads = $state['squads'];
+        if ($external_squad === null) $external_squad = $state['external_squad'] ?? '';
+    }
+    return ($internal !== null && (bool) array_intersect($internal, $user_squads ?? []))
+        || ($external !== null && $external_squad !== '' && in_array($external_squad, $external, true));
 }
 function globalkeys_is_xray_profile($obj) {
     if (!is_array($obj) || array_is_list($obj) || !isset($obj['outbounds']) || !is_array($obj['outbounds']) || squadconf_is_singbox($obj)) return false;

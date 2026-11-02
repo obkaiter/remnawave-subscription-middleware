@@ -5,6 +5,12 @@ function db_driver() { return 'sqlite'; }
 function setting($key, $default = null) { return $GLOBALS['settings'][$key] ?? $default; }
 function set_setting($key, $value) { $GLOBALS['settings'][$key] = $value; }
 function check($condition, $message) { if (!$condition) throw new RuntimeException($message); }
+function remnawave_url() { return 'https://panel.example.test'; }
+function remnawave_token() { return 'test-token'; }
+function remnawave_get_user_by_short($short, &$error = '') {
+    $GLOBALS['panel_user_fetches']++;
+    return ['status' => 'ACTIVE', 'externalSquadUuid' => 'external-a'];
+}
 
 require dirname(__DIR__) . '/lib/vless.php';
 require dirname(__DIR__) . '/lib/squadconf.php';
@@ -24,6 +30,27 @@ check(globalkeys_user_in_selected_squad('user', ['squad-a']) === false, 'empty s
 set_setting('globalkeys_squad_uuids', 'broken');
 check(globalkeys_user_in_selected_squad('user', ['squad-a']) === false, 'invalid setting fails closed');
 set_setting('globalkeys_squad_uuids', 'all');
+set_setting('globalkeys_external_squad_uuids', json_encode(['external-a']));
+check(globalkeys_user_in_selected_squad('user', [], 'external-a') === true, 'selected external squad grants access');
+check(globalkeys_user_in_selected_squad('user', ['squad-a'], 'external-b') === false, 'other external squad denied when internal selection is unrestricted');
+set_setting('globalkeys_squad_uuids', json_encode(['squad-a']));
+check(globalkeys_user_in_selected_squad('user', ['squad-a'], 'external-b') === true, 'internal match grants access when external differs');
+check(globalkeys_user_in_selected_squad('user', [], 'external-a') === true, 'external match grants access when internal differs');
+check(globalkeys_user_in_selected_squad('user', [], 'external-b') === false, 'neither squad matches');
+set_setting('globalkeys_squad_uuids', 'all');
+set_setting('globalkeys_external_squad_uuids', '[]');
+check(globalkeys_user_in_selected_squad('user', [], 'external-a') === false, 'empty external selection fails closed');
+set_setting('globalkeys_external_squad_uuids', 'all');
+check(globalkeys_user_in_selected_squad('user', [], '') === true, 'both unrestricted modes preserve historical access');
+
+$GLOBALS['pdo']->exec('CREATE TABLE squad_cache (su TEXT NOT NULL PRIMARY KEY, squads TEXT NULL, st TEXT NULL, ts INTEGER NOT NULL DEFAULT 0)');
+$GLOBALS['pdo']->prepare('INSERT INTO squad_cache (su, squads, st, ts) VALUES (?, ?, ?, ?)')->execute(['cached-user', '[]', 'ACTIVE', time()]);
+$GLOBALS['panel_user_fetches'] = 0;
+set_setting('globalkeys_external_squad_uuids', json_encode(['external-a']));
+check(globalkeys_user_in_selected_squad('cached-user') === true, 'legacy cache row refreshes external squad from panel');
+check($GLOBALS['panel_user_fetches'] === 1, 'legacy cache row fetched once');
+check($GLOBALS['pdo']->query("SELECT external_squad FROM squad_cache WHERE su = 'cached-user'")->fetchColumn() === 'external-a', 'external squad cached after migration');
+set_setting('globalkeys_external_squad_uuids', 'all');
 $golden = file_get_contents(__DIR__ . '/fixtures/mihomo.yaml');
 $uri = 'vless://123e4567-e89b-12d3-a456-426614174001@one.example.org:443?security=tls&type=ws&path=%2Fabc#One';
 

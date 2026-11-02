@@ -409,7 +409,8 @@ function migrate_extra_ddl($drv) {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS squad_cache (
                 su VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-                squads TEXT NULL, ts INT UNSIGNED NOT NULL DEFAULT 0, PRIMARY KEY (su)
+                squads TEXT NULL, st VARCHAR(32) NULL, external_squad VARCHAR(191) NULL,
+                ts INT UNSIGNED NOT NULL DEFAULT 0, PRIMARY KEY (su)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
             "CREATE TABLE IF NOT EXISTS wg_lease (
                 id INT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -490,7 +491,7 @@ function migrate_extra_ddl($drv) {
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
         )",
         "CREATE INDEX IF NOT EXISTS idx_squad_cfg ON squad_configs(squad_uuid)",
-        "CREATE TABLE IF NOT EXISTS squad_cache (su TEXT NOT NULL PRIMARY KEY, squads TEXT NULL, ts INTEGER NOT NULL DEFAULT 0)",
+        "CREATE TABLE IF NOT EXISTS squad_cache (su TEXT NOT NULL PRIMARY KEY, squads TEXT NULL, st TEXT NULL, external_squad TEXT NULL, ts INTEGER NOT NULL DEFAULT 0)",
         "CREATE TABLE IF NOT EXISTS wg_lease (
             id INTEGER PRIMARY KEY AUTOINCREMENT, pool_id TEXT NOT NULL, lease_key TEXT NOT NULL,
             config_id INTEGER NOT NULL, short_uuid TEXT NULL, hwid TEXT NULL, manual INTEGER NOT NULL DEFAULT 0,

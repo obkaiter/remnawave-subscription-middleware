@@ -12,10 +12,10 @@
 </div>
 <div class="card">
     <h3 style="margin-top:0">Внутренние сквады для ключей</h3>
-    <p class="muted">Выбор действует для всех ручных и автоматически импортированных ключей. Пользователь получит ключи, если состоит хотя бы в одном выбранном скваде. Ранее сохранённые настройки по умолчанию оставляют выдачу всем.</p>
+    <p class="muted">Выбор действует для всех ручных и автоматически импортированных ключей. Пользователь получит ключи, если состоит хотя бы в одном выбранном внутреннем или внешнем скваде. Когда сквады обоих типов не выбраны, ключи доступны всем активным пользователям.</p>
     <form method="post" id="gk-squad-form">
         <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="save_globalkeys_squads">
-        <label><input type="radio" name="squad_mode" value="all" <?= $gk_selected_squads === null ? 'checked' : '' ?>> Все активные пользователи (без ограничения по сквадам)</label>
+        <label><input type="radio" name="squad_mode" value="all" <?= $gk_selected_squads === null ? 'checked' : '' ?>> Без отбора по внутренним сквадам</label>
         <label><input type="radio" name="squad_mode" value="selected" <?= $gk_selected_squads !== null ? 'checked' : '' ?>> Только выбранные</label>
         <?php if ($gk_squads_err !== ''): ?><p class="muted">Список сквадов недоступен: <?= h($gk_squads_err) ?></p>
         <?php elseif (!$gk_squads): ?><p class="muted">Внутренние сквады не получены. Проверьте подключение к панели.</p><?php endif; ?>
@@ -26,7 +26,23 @@
         <button class="btn" type="submit">Сохранить сквады</button>
     </form>
 </div>
-<script>document.querySelectorAll('#gk-squad-form input[name="squads[]"]').forEach(input=>input.addEventListener('change',()=>{document.querySelector('#gk-squad-form input[value="selected"]').checked=true;}));</script>
+<div class="card">
+    <h3 style="margin-top:0">Внешние сквады для ключей</h3>
+    <p class="muted">Выбранные внешние сквады дают доступ к тем же глобальным ключам. Если также выбраны внутренние сквады, достаточно совпадения с одним из них.</p>
+    <form method="post" id="gk-external-squad-form">
+        <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="save_globalkeys_external_squads">
+        <label><input type="radio" name="squad_mode" value="all" <?= $gk_selected_external_squads === null ? 'checked' : '' ?>> Без отбора по внешним сквадам</label>
+        <label><input type="radio" name="squad_mode" value="selected" <?= $gk_selected_external_squads !== null ? 'checked' : '' ?>> Только выбранные</label>
+        <?php if ($gk_external_squads_err !== ''): ?><p class="muted">Список сквадов недоступен: <?= h($gk_external_squads_err) ?></p>
+        <?php elseif (!$gk_external_squads): ?><p class="muted">Внешние сквады не получены. Проверьте подключение к панели.</p><?php endif; ?>
+        <?php if ($gk_external_squads): ?><div class="gk-squad-grid">
+            <?php foreach ($gk_external_squads as $s): ?><label><input type="checkbox" name="squads[]" value="<?= h($s['uuid']) ?>" <?= $gk_selected_external_squads !== null && in_array($s['uuid'], $gk_selected_external_squads, true) ? 'checked' : '' ?>><span><?= h($s['name']) ?> <small class="muted">· <?= (int) $s['members'] ?></small></span></label><?php endforeach; ?>
+        </div><?php endif; ?>
+        <?php if ($gk_selected_external_squads !== null): foreach (array_diff($gk_selected_external_squads, array_column($gk_external_squads, 'uuid')) as $missing): ?><p class="muted">Сохранённый сквад не найден в панели: <?= h($missing) ?></p><?php endforeach; endif; ?>
+        <button class="btn" type="submit">Сохранить сквады</button>
+    </form>
+</div>
+<script>['gk-squad-form','gk-external-squad-form'].forEach(id=>{const form=document.getElementById(id);form.querySelectorAll('input[name="squads[]"]').forEach(input=>input.addEventListener('change',()=>{form.querySelector('input[value="selected"]').checked=true;}));});</script>
 <div class="card">
     <h3 style="margin-top:0">+ Добавить</h3>
     <form method="post" autocomplete="off">
