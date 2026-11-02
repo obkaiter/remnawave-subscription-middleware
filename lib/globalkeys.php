@@ -59,8 +59,9 @@ function globalkeys_user_in_selected_squad($short, ?array $user_squads = null, ?
         if ($user_squads === null) $user_squads = $state['squads'];
         if ($external_squad === null) $external_squad = $state['external_squad'] ?? '';
     }
-    return ($internal !== null && (bool) array_intersect($internal, $user_squads ?? []))
-        || ($external !== null && $external_squad !== '' && in_array($external_squad, $external, true));
+    // Each configured squad type is a separate access requirement.
+    return ($internal === null || (bool) array_intersect($internal, $user_squads ?? []))
+        && ($external === null || ($external_squad !== '' && in_array($external_squad, $external, true)));
 }
 function globalkeys_is_xray_profile($obj) {
     if (!is_array($obj) || array_is_list($obj) || !isset($obj['outbounds']) || !is_array($obj['outbounds']) || squadconf_is_singbox($obj)) return false;

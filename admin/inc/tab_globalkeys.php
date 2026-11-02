@@ -12,7 +12,7 @@
 </div>
 <div class="card">
     <h3 style="margin-top:0">Внутренние сквады для ключей</h3>
-    <p class="muted">Выбор действует для всех ручных и автоматически импортированных ключей. Пользователь получит ключи, если состоит хотя бы в одном выбранном внутреннем или внешнем скваде. Когда сквады обоих типов не выбраны, ключи доступны всем активным пользователям.</p>
+    <p class="muted">Выбор действует для всех ручных и автоматически импортированных ключей. Если выбраны и внутренние, и внешние сквады, пользователь должен состоять хотя бы в одном выбранном скваде каждого типа. Когда сквады обоих типов не выбраны, ключи доступны всем активным пользователям.</p>
     <form method="post" id="gk-squad-form">
         <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="save_globalkeys_squads">
         <label><input type="radio" name="squad_mode" value="all" <?= $gk_selected_squads === null ? 'checked' : '' ?>> Без отбора по внутренним сквадам</label>
@@ -28,7 +28,7 @@
 </div>
 <div class="card">
     <h3 style="margin-top:0">Внешние сквады для ключей</h3>
-    <p class="muted">Выбранные внешние сквады дают доступ к тем же глобальным ключам. Если также выбраны внутренние сквады, достаточно совпадения с одним из них.</p>
+    <p class="muted">Если выбраны внешние сквады, ключи доступны только пользователям с одним из выбранных внешних сквадов. Если также выбраны внутренние сквады, пользователь должен соответствовать и внутреннему, и внешнему отбору.</p>
     <form method="post" id="gk-external-squad-form">
         <input type="hidden" name="csrf" value="<?= h($token) ?>"><input type="hidden" name="action" value="save_globalkeys_external_squads">
         <label><input type="radio" name="squad_mode" value="all" <?= $gk_selected_external_squads === null ? 'checked' : '' ?>> Без отбора по внешним сквадам</label>
